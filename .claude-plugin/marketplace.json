@@ -1,5 +1,15 @@
 {
   "name": "claude-code-pilotage",
-  "owner": { "name": "Anderson Gomes" },
-  "plugins": [{ "name": "pilotage", "source": "./" }]
+  "owner": {
+    "name": "Anderson Gomes"
+  },
+  "plugins": [
+    {
+      "name": "pilotage",
+      "source": "./"
+    }
+  ],
+  "metadata": {
+    "description": "Pilotage: a project dashboard pane for Claude Code"
+  }
 }

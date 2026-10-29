@@ -17,7 +17,7 @@ export type Agent = {
   fil?: Pas[]
 }
 
-// une action visible : ce qui a été fait, quand
+// a visible action: what was done, when
 export type Pas = { t: number; quoi: string }
 
 export type Ligne = { cells: string[] }

@@ -1,148 +1,152 @@
-# Pilotage — un tableau de bord de chantier pour Claude Code
+# Pilotage — a project dashboard for Claude Code
 
-Un mod pour Claude Code qui affiche, à côté de la conversation, **où en est le chantier** : ce que Claude attend de toi, qui travaille, ce qui est fait, et ce qui vient ensuite.
+A Claude Code mod that docks a pane beside the chat showing **where the project stands**: what Claude is waiting for from you, who is working, what is done and what comes next.
 
-> **English summary.** A Claude Code mod that docks a "flight plan" pane beside the chat: what is waiting on you, who is working (subagents and background tasks), what is done and what comes next. It combines a small `PILOTAGE.md` file that Claude keeps in the project folder with what the mod observes live (agents, background tasks, end-of-turn questions). The interface is in French.
+> The interface and the keywords of the `PILOTAGE.md` file are in **French**. This README explains every word you will see.
 
 <p align="center">
-  <img src="docs/panneau.png" alt="Le panneau Pilotage" width="420">
+  <img src="docs/panneau.png" alt="The Pilotage pane" width="420">
 </p>
 
 ---
 
-## Pourquoi
+## Why
 
-Sur un vrai projet, on finit vite avec plusieurs choses en parallèle : une session qui code, des agents qui cherchent ou relisent, des retours qu'on envoie au fil de l'eau. Et on perd le fil :
+On a real project you quickly end up with several things in parallel: a session writing code, agents searching or reviewing, feedback you send as it comes. And you lose track:
 
-- *Qu'est-ce que Claude attend de moi, là, maintenant ?*
-- *Qui travaille, et sur quoi ?*
-- *Qu'est-ce qui est fait, qu'est-ce qui vient ensuite ?*
+- *What is Claude waiting for from me, right now?*
+- *Who is working, and on what?*
+- *What is done, and what comes next?*
 
-Le panneau répond à ces trois questions d'un coup d'œil, sans rien taper. Il est né d'un chantier de site web où un seul agent faisait tout, où les retours s'empilaient et où personne ne voyait l'organisation.
+The pane answers those three questions at a glance, without typing anything.
 
-## Ce qu'il affiche
+## What it shows
 
-La vue d'ensemble tient sur un écran ; le détail s'ouvre au clic.
+The overview fits on one screen; details open on click.
 
-| Bloc | Ce qu'on y voit |
+| Block (French label) | What you see |
 | --- | --- |
-| **À toi** | une ligne en tête. **Bleu** : des points que tu peux traiter. **Orange** : Claude s'est arrêté et t'attend. **Gris** « Claude réfléchit · rien à faire » : Claude travaille, tes points reviendront quand il aura fini. Un clic montre la liste : « À répondre maintenant », puis « Quand tu peux ». |
-| **Objectif** | le livrable et l'étape, l'action du moment, le temps passé. |
-| **Équipe** | le **chef** (la session) et son état ; pendant qu'il travaille, `↳` dit ce qu'il fait à l'instant. Puis **Agents en cours**, **Tâches du chef** (⚙ commandes, serveurs, suivis lancés en arrière-plan : ce ne sont pas des agents), **À lancer**, **Fait**. |
-| **Prochain lot** | le travail à venir rangé par sujet, autant de sujets que l'écran en tient, le reste en « + N autres ». |
-| **?** | à côté d'un agent, d'une tâche, d'un sujet ou d'un point : prépare `/btw Question sur « … » :` dans la zone de saisie, pour poser une question sans interrompre Claude. |
+| **À toi** (your turn) | one line at the top. **Blue**: items you can handle. **Orange**: Claude stopped and is waiting for you. **Grey** "Claude réfléchit · rien à faire" (Claude is thinking, nothing to do): your items come back when it is done. A click shows the list: "À répondre maintenant" (answer now), then "Quand tu peux" (when you can). |
+| **Objectif** (goal) | the deliverable and the stage, the current action, the time spent. |
+| **Équipe** (team) | the **chef** (the session itself) and its state; while it works, `↳` says what it is doing. Then **Agents en cours** (running agents), **Tâches du chef** (⚙ commands, servers, watchers started in the background — not agents), **À lancer** (to start), **Fait** (done). |
+| **Prochain lot** (next batch) | upcoming work grouped by subject, as many subjects as the screen holds, the rest as "+ N autres". |
+| **?** | next to an agent, a task, a subject or an item: fills `/btw Question sur « … » :` in the prompt box, to ask a question without interrupting Claude. |
 
-Au clic :
+On click:
 
-- **Un agent** : ce dont il est en charge, ses fichiers, sa mission en une phrase, ses étapes (un titre et une ligne chacune ; « Tout le détail » les déplie), ce qu'il a rendu et pourquoi, ses dernières actions.
-- **Une tâche du chef** : à quoi elle sert, depuis quand elle tourne, sa commande.
-- **Un sujet du prochain lot** : ses tâches.
+- **An agent**: what it is in charge of, its files, its mission in one sentence, its steps (one title and one line each; "Tout le détail" expands them), what it delivered and why, its latest actions.
+- **A chef task**: what it is for, how long it has been running, its command.
+- **A next-batch subject**: its tasks.
 
-Quand le panneau est fermé, un **bandeau d'une ligne** au-dessus de la zone de saisie résume la situation, avec un bouton **Ouvrir**.
+When the pane is closed, a **one-line band** above the prompt box sums things up, with an **Ouvrir** (open) button.
 
 <p align="center">
-  <img src="docs/bandeau.png" alt="Le bandeau au-dessus de la saisie" width="640">
+  <img src="docs/bandeau.png" alt="The band above the prompt box" width="640">
 </p>
 
-## Comment ça marche
+## How it works
 
-Le panneau croise deux sources.
+The pane combines two sources.
 
 ```
- PILOTAGE.md (écrit par Claude)          ce que le mod voit en direct
- ─────────────────────────────           ─────────────────────────────
- Cap, fronts, Fait, À toi,               agents lancés et finis, leur brief,
- En attente                              tâches en arrière-plan, question
-                │                        posée en fin de tour, ton message
+ PILOTAGE.md (written by Claude)         what the mod sees live
+ ───────────────────────────────         ─────────────────────────────
+ heading, workstreams, done,             agents started and finished,
+ your turn, waiting                      their brief, background tasks,
+                │                        end-of-turn question, your message
                 └──────────────┬─────────────────┘
                                ▼
-                        le panneau Pilotage
+                        the Pilotage pane
 ```
 
-- **Le plan de vol** (`PILOTAGE.md`) dit l'intention : le cap, les fronts de travail, ce qui est fait, ce qu'on attend de toi, ce qui vient ensuite. Claude l'écrit et le tient à jour ; toi, tu ne fais que le lire dans le panneau.
-- **Le direct** dit la réalité : un agent lancé apparaît tout de suite avec sa mission ; une question posée par Claude en fin de tour entre d'office dans « À toi » ; dès que tu écris, « À toi » passe en gris le temps que Claude relise.
+- **The flight plan** (`PILOTAGE.md`) states the intent: the heading, the workstreams, what is done, what is expected from you, what comes next. Claude writes and maintains it; you only read it in the pane.
+- **The live feed** states reality: a new agent shows up at once with its mission; a question Claude asks at the end of a turn goes straight into "À toi"; as soon as you send a message, "À toi" turns grey while Claude reads it.
 
-Le panneau ne fait donc que montrer. Sa justesse dépend de deux choses : que Claude tienne `PILOTAGE.md` à jour (la méthode plus bas), et qu'il nomme et briefe ses agents selon une convention simple.
+The pane only displays. It is accurate if Claude keeps `PILOTAGE.md` up to date (see the method below) and names and briefs its agents following a simple convention.
 
-### Comment il trouve le chantier
+### How it finds the project
 
-Le mod cherche un `PILOTAGE.md` dans le dossier de la session ou au-dessus ; sinon, celui que la session a lu ou écrit pendant la conversation (le lien est gardé). Il ne montre jamais le chantier d'une autre session. Sans fichier, il le dit.
+The mod looks for a `PILOTAGE.md` in the session folder or above; otherwise, the one the session read or wrote during the conversation (the link is remembered). It never shows another session's project. Without a file, it says so.
 
-## Le fichier `PILOTAGE.md`
+## The `PILOTAGE.md` file
+
+Section names are **fixed French keywords**: the mod reads them. The content can be in any language.
 
 ```markdown
-# Pilotage : Site de Durand Menuiserie
-Mis à jour : 14/11/2026
-Cap : Site v1, lot 2 sur 3 : pages réalisations
+# Pilotage : Website for Northwind Carpentry
+Updated: 2026-11-14
+Cap : Website v1, batch 2 of 3 : project pages
 
 ## Sessions
-| Session | Livrable | Dossier | État |
+| Session | Deliverable | Folder | État |
 | --- | --- | --- | --- |
-| Site | pages, design, mise en ligne | ~/sites/durand | en cours |
+| Website | pages, design, launch | ~/sites/northwind | en cours |
 
-## Fronts de cette session
-| Front | Fichiers | Agent | État |
+## Fronts
+| Front | Files | Agent | État |
 | --- | --- | --- | --- |
-| Réalisations | realisations/*.html | Réalisations · construction : 6 fiches chantier | en cours |
-| Contrôle | aucun | Contrôle · contrôle : relire le lot 2 | à lancer |
+| Projects | projects/*.html | Projects · construction : 6 project pages | en cours |
+| Review | none | Review · contrôle : review batch 2 | à lancer |
 
 ## Fait
-- Cadrage validé avec le client (10/11)
+- Scope approved by the client (11/10)
 
 ## À toi
-- ! Photos : demander au client l'avant/après de la cuisine
-- Accueil : la valider sur ton téléphone
+- ! Photos : ask the client for before/after shots of the kitchen
+- Home page : check it on your phone
 
 ## En attente
-- Devis : formulaire en ligne après la v1
-- Avis : bloc sur l'accueil quand le client en aura dix
-- Toi : relancer le client pour les textes de l'équipe
+- Quote : online quote form after v1
+- Reviews : show them once the client has 10
+- Toi : remind the client about the team bios
 ```
 
-| Section | Règle |
-| --- | --- |
-| `Cap` | `livrable, étape : action`. Le panneau découpe la ligne tout seul. |
-| `Fronts` | un front = des fichiers à lui et un livrable. États reconnus : `à lancer`, `en cours`, `rendu`, `contrôlé`. |
-| `Fait` | une ligne en français courant par lot fini, avec la date. |
-| `À toi` | tout ce qu'on attend de toi et que tu peux faire **tout de suite** (question, validation, test, capture), au format `Thème : détail`. Un `!` en tête marque ce qui bloque la suite : il passe en premier. |
-| `En attente` | chaque ligne commence par son responsable : un sujet court (le panneau regroupe par sujet) ou `Toi :` (le panneau le passe dans « À toi »). |
+| Keyword | Meaning | Rule |
+| --- | --- | --- |
+| `# Pilotage :` | project name | first line. |
+| `Cap :` | heading | `deliverable, stage : action` (with a space before each colon). The pane splits the line by itself. |
+| `## Sessions` | sessions | one row per Claude session working on the project. |
+| `## Fronts` | workstreams | one workstream = its own files and a deliverable. Recognised states (`État`): `à lancer` (to start), `en cours` (running), `rendu` (delivered), `contrôlé` (reviewed). |
+| `## Fait` | done | one plain line per finished batch, with the date. |
+| `## À toi` | your turn | everything expected from you that you can do **now** (question, approval, test, screenshot), as `Topic : detail`. A leading `!` marks what blocks the rest: it comes first. |
+| `## En attente` | waiting | each line starts with its owner: a short topic (the pane groups by topic) or `Toi :` (you — the pane moves it into "À toi"). |
 
-D'autres exemples dans [`exemples/`](exemples/) : site d'artisan, automatisation de mails, étude d'outils, formation.
+More examples in [`examples/`](examples/): small-business website, email automation, tool comparison, online course. All names in them are invented.
 
-## La méthode, côté Claude
+## The method, on Claude's side
 
-Le panneau n'est juste que si Claude suit quelques règles. Colle ceci dans le `CLAUDE.md` de ton projet, ou dans `~/.claude/CLAUDE.md` pour tous tes projets :
+The pane is only accurate if Claude follows a few rules. Paste this into your project's `CLAUDE.md`, or into `~/.claude/CLAUDE.md` for all projects:
 
 ```markdown
 ## Pilotage
-- Au démarrage d'un chantier : un stop, puis `PILOTAGE.md` à la racine (modèle : README du mod Pilotage). Le montrer en cinq lignes, attendre la validation.
-- Un agent par front, seulement si les fronts touchent des fichiers différents. Un agent qui a rendu son lot ne reçoit pas le suivant : lot suivant = agent neuf.
-- Nommer chaque agent `Front · type : action` (types : recherche, construction, correction, contrôle), relecteur compris.
-- Le brief d'un agent commence par `Mission : <une phrase simple, sans chemin ni jargon>`, puis ses étapes numérotées (`1. …`, une action courte par ligne), puis le détail technique. Le compte rendu finit par `En une phrase : …` et `Pourquoi : …`.
-- « À toi » : tout ce qu'on attend de moi, dans le même tour. Le mettre à jour en premier quand mon message y répond. Une vérification sort d'« À toi » dès qu'on retouche ce qu'elle vérifie, et y revient à la publication. Deux points faits par le même geste n'en font qu'un.
-- Une question qui m'est posée passe par « À toi » ou par la question de fin de tour, jamais seulement dans le texte.
-- À chaque lot fini : contrôle neutre, ligne dans « Fait », « En attente » rangé par sujet.
+- When a project starts: stop, then write `PILOTAGE.md` at the root (template: the Pilotage mod README). Show it in five lines and wait for approval.
+- One agent per workstream, only if the workstreams touch different files. An agent that delivered its batch does not get the next one: next batch = new agent.
+- Name each agent `Front · type : action` (types: recherche, construction, correction, contrôle — research, build, fix, review), reviewers included.
+- An agent's brief starts with `Mission : <one simple sentence, no paths, no jargon>`, then numbered steps (`1. …`, one short action per line), then the technical details. Its report ends with `En une phrase : …` (in one sentence) and `Pourquoi : …` (why).
+- "À toi": everything expected from me, in the same turn. Update it first when my message answers it. A check leaves "À toi" as soon as what it checks is being changed, and comes back when it is published. Two items done by the same action are one.
+- A question asked to me goes through "À toi" or the end-of-turn question, never only in the text.
+- After each batch: a neutral review, a line in "Fait", "En attente" grouped by topic.
 ```
 
-Ce qui se passe à chaque étape :
+What happens at each step:
 
-1. **Démarrage** : Claude écrit le plan de vol. Le panneau s'ouvre seul.
-2. **Chaque message** : Claude le range (même front, autre front, autre chantier, simple question) et met « À toi » à jour en premier. Pendant qu'il travaille, « À toi » est en gris.
-3. **Agents** : chacun apparaît dans « Agents en cours » avec sa mission et ses étapes, puis dans « Fait » avec ce qu'il a rendu et pourquoi.
-4. **Fin de tour** : si Claude te pose une question, elle entre dans « À toi ». S'il s'arrête pour t'attendre, la ligne passe en orange.
-5. **Fin de lot** : contrôle neutre, « Fait » complété, prochain lot rangé par sujet.
+1. **Start**: Claude writes the flight plan. The pane opens by itself.
+2. **Each message**: Claude routes it (same workstream, other workstream, other project, simple question) and updates "À toi" first. While it works, "À toi" is grey.
+3. **Agents**: each one appears in "Agents en cours" with its mission and steps, then in "Fait" with what it delivered and why.
+4. **End of turn**: if Claude asks you something, it goes into "À toi". If it stops to wait for you, the line turns orange.
+5. **End of batch**: neutral review, "Fait" updated, next batch grouped by topic.
 
-## Les estimations de durée
+## Duration estimates
 
-Les modèles estiment mal la durée de leur propre travail. Le mod ne demande donc rien à Claude : il **mesure**. Chaque agent terminé est enregistré (type, durée, nombre d'actions) ; un agent qui dépasse la durée habituelle de son type est signalé « long ». Rien sous 5 mesures : mieux vaut pas de signal qu'un signal faux. Le type se lit dans le nom de l'agent (`Front · type : action`).
+Models are poor at estimating how long their own work takes. So the mod asks Claude nothing: it **measures**. Every finished agent is recorded (type, duration, number of actions); an agent running past the usual duration for its type is flagged "long". Nothing below 5 measurements: no signal beats a wrong one. The type is read from the agent name (`Front · type : action`).
 
-## Le temps passé
+## Time spent
 
-Si un fichier `temps.csv` avec une colonne `duree_min` se trouve dans le dossier du chantier ou au-dessus, la carte Objectif en affiche le total. Sans ce fichier, rien.
+If a `temps.csv` file with a `duree_min` column (minutes) sits in the project folder or above, the Objectif card shows the total. Without it, nothing.
 
-## Installer
+## Install
 
-Depuis un terminal :
+From a terminal:
 
 ```bash
 claude plugin marketplace add Anderson-Gomes-Lab/claude-code-pilotage
@@ -152,31 +156,31 @@ claude plugin marketplace add Anderson-Gomes-Lab/claude-code-pilotage
 claude plugin install pilotage@claude-code-pilotage --scope user
 ```
 
-`--scope user` l'active dans tous tes projets. Dans l'appli de bureau : **+** à côté de la zone de saisie, **Plugins**, **Add marketplace** avec `Anderson-Gomes-Lab/claude-code-pilotage`, puis **Add plugin**.
+`--scope user` enables it in all your projects. In the desktop app: **+** next to the prompt box, **Plugins**, **Add marketplace** with `Anderson-Gomes-Lab/claude-code-pilotage`, then **Add plugin**.
 
-Le panneau s'ouvre seul dès que la session a un `PILOTAGE.md`. Sinon : `/panneau-pilotage`.
+The pane opens by itself as soon as the session has a `PILOTAGE.md`. Otherwise: `/panneau-pilotage`.
 
-**Mettre à jour** : `claude plugin marketplace update claude-code-pilotage`, puis `claude plugin update pilotage@claude-code-pilotage`. Les sessions ouvertes prennent la nouvelle version d'elles-mêmes ; si l'une ne suit pas, `/reload-plugins` dans cette session.
+**Update**: `claude plugin marketplace update claude-code-pilotage`, then `claude plugin update pilotage@claude-code-pilotage`. Open sessions pick up the new version by themselves; if one does not, run `/reload-plugins` in it.
 
-## Ce que le mod écrit sur ta machine
+## What the mod writes on your machine
 
-- `~/.claude/pilotage/durees.json` : durées des agents finis (type, minutes, nombre d'actions ; aucun contenu).
-- `~/.claude/pilotage/sessions/<id>.txt` : le chantier lié à chaque session.
-- `~/.claude/pilotage/missions/<id>.json` et `finis/<id>.json` : briefs et comptes rendus des agents, pour les revoir après un rechargement.
-- `~/.claude/pilotage/ecran.json` : la hauteur du panneau, pour régler ce qui tient à l'écran.
-- `<chantier>/.pilotage/<id>.json` : les agents en cours de chaque session, pour les autres sessions du même chantier. Un `.gitignore` y est créé.
+- `~/.claude/pilotage/durees.json`: durations of finished agents (type, minutes, number of actions; no content).
+- `~/.claude/pilotage/sessions/<id>.txt`: the project linked to each session.
+- `~/.claude/pilotage/missions/<id>.json` and `finis/<id>.json`: agent briefs and reports, to show them again after a reload.
+- `~/.claude/pilotage/ecran.json`: the pane height, to fit the overview on screen.
+- `<project>/.pilotage/<id>.json`: each session's running agents, for other sessions on the same project. A `.gitignore` is created there.
 
-Rien ne sort de ta machine.
+Nothing leaves your machine.
 
-## Limites
+## Limits
 
-- Interface en français.
-- Le panneau prend la place de la colonne Détails de l'appli de bureau ; d'où le bandeau quand il est fermé.
-- Ce que le panneau dit de l'intention (« À toi », prochain lot) dépend de Claude qui tient `PILOTAGE.md` à jour. Le direct (agents, tâches, questions de fin de tour) ne dépend que du mod.
-- Les mods de Claude Code sont récents : une mise à jour de Claude Code peut demander une mise à jour du mod.
+- French interface and keywords.
+- The pane takes the place of the desktop app's Details column; hence the band when it is closed.
+- What the pane says about intent ("À toi", next batch) depends on Claude keeping `PILOTAGE.md` up to date. The live feed (agents, tasks, end-of-turn questions) depends only on the mod.
+- Claude Code mods are new: a Claude Code update may require a mod update.
 
-## Contexte
+## About
 
-Construit par [Anderson Gomes](https://github.com/Anderson-Gomes-Lab), consultant en automatisation, pour piloter ses propres chantiers avec Claude Code. Partagé tel quel, sans engagement de support. Les retours sont bienvenus dans les *issues*.
+Built by [Anderson Gomes](https://github.com/Anderson-Gomes-Lab) to run real projects with Claude Code. Shared as is, with no support commitment. Feedback is welcome in the issues.
 
-Licence MIT.
+MIT licence.

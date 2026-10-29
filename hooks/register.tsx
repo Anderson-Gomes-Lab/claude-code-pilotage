@@ -2,9 +2,9 @@ import type { Register } from 'claude-code'
 
 import type { Agent, Ligne, Plan, Voisine, Pas } from '../types'
 
-// Panneau Pilotage : lit le PILOTAGE.md du chantier, suit les agents de la session,
-// partage leur état avec les autres sessions du chantier (dossier .pilotage/),
-// et compare chaque durée aux durées réelles passées (~/.claude/pilotage/durees.json).
+// Pilotage panel: reads the project's PILOTAGE.md, tracks the session's agents,
+// shares their state with the project's other sessions (.pilotage/ folder),
+// and compares each duration with past real durations (~/.claude/pilotage/durees.json).
 
 const PANE = 'pilotage'
 const TYPES = ['recherche', 'contrôle', 'construction', 'correction']
@@ -21,7 +21,7 @@ type Duree = { type: string; minutes: number; outils: number }
 
 const parent = (p: string) => p.replace(/\/[^/]+\/?$/, '') || '/'
 const segments = (p: string) => p.split('/').filter(Boolean).length
-const VIEUX_MS = 30 * 60_000 // une session muette depuis 30 min ne s'affiche plus
+const VIEUX_MS = 30 * 60_000 // a session silent for 30 min is no longer shown
 
 // « Héros · construction : refaire le haut » → front Héros, type construction
 export function lireNom(nom: string): { front: string; type: string } {
@@ -43,14 +43,14 @@ const liste = (bloc: string) =>
   bloc.split('\n').filter(l => l.trim().startsWith('- ')).map(l => l.trim().slice(2))
     .filter(l => !/^rien\b/i.test(l))
 
-// Coupe une phrase du plan en deux lignes lisibles : avant et après le premier séparateur.
+// Splits a plan sentence into two readable lines: before and after the first separator.
 export function couper(texte: string, sep: string): [string, string] {
   const i = texte.indexOf(sep)
   const maj = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
   return i < 0 ? [maj(texte.trim()), ''] : [maj(texte.slice(0, i).trim()), maj(texte.slice(i + sep.length).trim())]
 }
 
-// Le bandeau au-dessus de la saisie : l'essentiel du panneau en une ligne.
+// The band above the input box: the panel's essentials on one line.
 export function resume(plan: Plan, enCours: number, enPlus = 0): string {
   const [, etape] = couper(plan.cap, ', ')
   const [numero] = couper(etape, ' : ')
@@ -62,7 +62,7 @@ export function resume(plan: Plan, enCours: number, enPlus = 0): string {
   ].filter(Boolean).join(' · ')
 }
 
-// Temps passé du chantier : somme de la colonne duree_min d'un registre temps.csv (lignes vides ignorées).
+// Time spent on the project: sum of the duree_min column of a temps.csv log (empty lines ignored).
 export function tempsPasse(csv: string): number {
   const lignes = csv.split(/\r?\n/).filter(l => l.trim())
   if (!lignes.length) return 0
@@ -81,7 +81,7 @@ export function tempsPasse(csv: string): number {
   return lignes.slice(1).reduce((t, l) => t + (Number(cellules(l)[col]) || 0), 0)
 }
 
-// 45 min, 2 h 30, 12 h : pas de décimale inutile
+// 45 min, 2 h 30, 12 h: no needless decimal
 export function duree(minutes: number): string {
   const m = Math.round(minutes)
   if (m < 60) return `${m} min`
@@ -89,7 +89,7 @@ export function duree(minutes: number): string {
   return h >= 10 || r === 0 ? `${Math.round(m / 60)} h` : `${h} h ${String(r).padStart(2, '0')}`
 }
 
-// Une action d'outil dite en clair, pour le fil : « a lu register.tsx », « a lancé les tests »
+// A tool action in plain words, for the feed: « a lu register.tsx », « a lancé les tests »
 export function action(outil: string, x: Record<string, unknown>): string {
   const court = (v: unknown, n = 60) => { const t = String(v ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t }
   const fichier = (v: unknown) => String(v ?? '').split('/').pop() || 'un fichier'
@@ -97,7 +97,7 @@ export function action(outil: string, x: Record<string, unknown>): string {
     case 'Read': return `a lu ${fichier(x.file_path)}`
     case 'Write': return `a écrit ${fichier(x.file_path)}`
     case 'Edit': case 'MultiEdit': case 'NotebookEdit': return `a modifié ${fichier(x.file_path ?? x.notebook_path)}`
-    // jamais la commande elle-même : elle peut contenir un secret
+    // never the command itself: it may contain a secret
     case 'Bash': return x.description ? `a lancé : ${court(x.description)}` : 'a lancé une commande'
     case 'Grep': return `a cherché « ${court(x.pattern, 40)} » dans le code`
     case 'Glob': return `a listé ${court(x.pattern, 40)}`
@@ -109,24 +109,24 @@ export function action(outil: string, x: Record<string, unknown>): string {
   }
 }
 
-// Fin de compte rendu d'un agent : « En une phrase : … » et « Pourquoi : … » (skill pilotage)
+// End of an agent's report: « En une phrase : … » and « Pourquoi : … » (pilotage skill)
 export function extraire(texte: string): { resume: string; pourquoi: string } {
   const net = texte.replace(/\*\*/g, '')
-  // la dernière ligne qui commence par l'étiquette : le résumé est en fin de compte rendu
+  // the last line starting with the label: the summary is at the end of the report
   const lire = (motif: RegExp) => ([...net.matchAll(motif)].pop()?.[1] ?? '').trim().replace(/^[«"]\s*|\s*[»"]$/g, '')
   return { resume: lire(/^\s*(?:[-*]\s*)?En une phrase\s*:\s*(.+)$/gim), pourquoi: lire(/^\s*(?:[-*]\s*)?Pourquoi\s*:\s*(.+)$/gim) }
 }
 
-// Première phrase d'un brief, pour dire la mission en une ligne
+// First sentence of a brief, to state the mission in one line
 export function unePhrase(texte = '', n = 160): string {
   const t = texte.replace(/\s+/g, ' ').trim()
-  // fin de phrase : un mot d'au moins deux lettres puis . ! ? (pas « S.A. »)
+  // end of sentence: a word of at least two letters, then . ! ? (not « S.A. »)
   const p = t.match(/^(.+?[a-zà-ÿ0-9)»"']{2}[.!?])(\s|$)/)?.[1] ?? t
   return p.length > n ? p.slice(0, n - 1) + '…' : p
 }
 
-// Un agent appartient à un front si son front porte le même nom, ou si leurs noms
-// partagent au moins deux mots significatifs (« Front B : bandeau cookies » ↔ « B. Bandeau cookies pleine largeur »)
+// An agent belongs to a front if its front has the same name, or if their names
+// share at least two meaningful words (« Front B : bandeau cookies » ↔ « B. Bandeau cookies pleine largeur »)
 export function appartient(agent: { front: string; nom: string }, front: string): boolean {
   const norm = (x: string) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   if (norm(agent.front) === norm(front)) return true
@@ -135,12 +135,12 @@ export function appartient(agent: { front: string; nom: string }, front: string)
   return [...a].filter(m => f.has(m)).length >= 2
 }
 
-// Lettre d'un front : « F. Laiton… » ou « Front F : laiton… » → « F »
+// Letter of a front: « F. Pied de page… » or « Front F : pied de page… » → « F »
 export function codeFront(x = ''): string {
   return x.match(/^(?:[Ff]ront\s+)?([A-Z]\d{0,2})\s*[.:·)]\s/)?.[1] ?? ''
 }
 
-// Une énumération coupée en morceaux (virgule, point-virgule, « + »), sans couper dans les parenthèses
+// A list split into pieces (comma, semicolon, « + »), without splitting inside parentheses
 export function morceaux(texte = ''): string[] {
   const out: string[] = []
   let cur = '', prof = 0
@@ -154,10 +154,10 @@ export function morceaux(texte = ''): string[] {
   return out.map(m => m.trim()).filter(Boolean).map(m => m.charAt(0).toUpperCase() + m.slice(1))
 }
 
-// Étapes d'un brief : ses lignes numérotées (« 1. … »), dans l'ordre
-// La mission lisible : la ligne « Mission : … » du brief, sinon sa première phrase
+// Steps of a brief: its numbered lines (« 1. … »), in order
+// The readable mission: the brief's « Mission : … » line, otherwise its first sentence
 export function mission(brief = ''): string {
-  // une phrase seulement : le chemin, la commande ou l'adresse qui suivent sont pour l'agent
+  // one sentence only: the path, command or address that follow are for the agent
   const m = brief.match(/^\s*(?:Mission|Objectif)\s*:\s*(.+)$/im)?.[1]?.trim()
   const t = unePhrase(sansMarques(m || brief.replace(/^\s*(?:Mission|Objectif)\s*:\s*/i, '')), 240)
   return t.charAt(0).toUpperCase() + t.slice(1)
@@ -169,17 +169,17 @@ export function etapes(brief = ''): string[] {
   for (const l of brief.split('\n')) {
     const n = l.match(/^\s*\d+[.)]\s+(.+)/)
     if (n) { out.push(n[1].trim()); dans = true; continue }
-    // la suite d'une étape (lignes en retrait) lui reste attachée ; le reste la ferme
+    // the rest of a step (indented lines) stays attached to it; anything else closes it
     if (dans && /^\s+\S/.test(l)) out[out.length - 1] += '\n' + l.trim().replace(/^[-•*]\s*/, '• ')
     else dans = false
   }
   return out.slice(0, 12)
 }
 
-// Une étape coupée à son premier « : » hors guillemets : ce qui précède (le thème) et le reste
+// A step split at its first « : » outside quotes: what comes before (the theme) and the rest
 function couperEtape(x = ''): { avant: string; corps: string } {
   const [brute, ...suite] = x.split('\n')
-  // un thème en gras (« **Titre** … ») est le titre, quoi qu'il suive
+  // a bold theme (« **Titre** … ») is the title, whatever follows
   const gras = brute.match(/^\s*\*\*(.+?)\*\*\s*:?\s*(.*)$/)
   if (gras) return { avant: sansMarques(gras[1]).replace(/\s*:\s*$/, ''), corps: sansMarques([gras[2], ...suite].join('\n')).trim() }
   const premiere = sansMarques(brute)
@@ -193,12 +193,12 @@ function couperEtape(x = ''): { avant: string; corps: string } {
   return { avant: premiere.slice(0, i).trim(), corps: sansMarques([premiere.slice(i + 1).trim(), ...suite].join('\n')).trim() }
 }
 
-// Le gras et le code Markdown ne s'affichent pas dans le panneau : on enlève leurs marques
+// Markdown bold and code are not shown in the panel: their marks are removed
 const sansMarques = (t: string) => t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*\*/g, '').replace(/`/g, '')
 
 const majuscule = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
-// Une étape résumée : un titre court (le thème, jusqu'à la première virgule) et une ligne (la première phrase qui suit)
+// A summarized step: a short title (the theme, up to the first comma) and one line (the first sentence after it)
 export function etapeCourte(x = '', n = 80): { titre: string; ligne: string } {
   const { avant, corps } = couperEtape(x)
   if (!avant) return { titre: uneLigne(phrases(corps)[0] ?? '', 60), ligne: '' }
@@ -206,8 +206,8 @@ export function etapeCourte(x = '', n = 80): { titre: string; ligne: string } {
   return { titre: uneLigne(avant.split(',')[0].trim(), 40), ligne: uneLigne(majuscule(phrase), n) }
 }
 
-// Une étape en entier : le thème complet, puis une ligne par phrase (un seul découpage, rien de perdu ni de répété),
-// les puces à part, les consignes techniques (commande, chemin, fichier) en petit
+// A full step: the whole theme, then one line per sentence (a single split, nothing lost or repeated),
+// bullets apart, technical instructions (command, path, file) in small type
 export function detailEtape(x = ''): { titre: string; lignes: { texte: string; puce: boolean; technique: boolean }[] } {
   const { avant, corps } = couperEtape(x)
   const ps = phrases(corps)
@@ -224,19 +224,19 @@ export function detailEtape(x = ''): { titre: string; lignes: { texte: string; p
   }
 }
 
-// Le détail apporte-t-il quelque chose au résumé ? Sinon, pas de bouton pour le déplier
+// Does the detail add anything to the summary? If not, no button to expand it
 export function aDuDetail(x = ''): boolean {
   const c = etapeCourte(x), d = detailEtape(x)
   return d.titre !== c.titre || d.lignes.length > (c.ligne ? 1 : 0) || (d.lignes.length === 1 && d.lignes[0].texte !== c.ligne)
 }
 
-// Une étape en lignes courtes : une phrase par ligne, les puces à part
+// A step in short lines: one sentence per line, bullets apart
 export function phrases(texte = ''): string[] {
-  // pas de coupe après une initiale (« M. Durand », « S.A. »)
+  // no split after an initial (« M. X », « S.A. »)
   return texte.split('\n').flatMap(l => l.split(/(?<=[.!?…])(?<!(?:^|[^\p{L}])[A-ZÀ-Ý]\.)\s+(?=[«A-ZÀ-Ý•])/u)).map(x => x.trim()).filter(Boolean)
 }
 
-// Ce que fait une tâche du chef, en clair
+// What a lead task does, in plain words
 export function nomTache(quoi = ''): string {
   if (/live updates? for artifact/i.test(quoi)) return 'Suivi d’une page publiée'
   return quoi
@@ -250,41 +250,41 @@ export function aQuoiSert(quoi = '', commande = ''): string {
   return 'Commande lancée en arrière-plan. Claude reçoit son résultat quand elle finit.'
 }
 
-// Une ligne au plus : coupée proprement
+// One line at most: cut cleanly
 export function uneLigne(texte: string, n = 48): string {
   const t = texte.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '').replace(/[\s·,;:–-]+$/, '') + '…' : t
 }
 
-// Nom affiché d'un agent : sans « Front · type : » ni « Front A : », première lettre en capitale
+// Displayed agent name: without « Front · type : » or « Front A : », first letter capitalized
 export function nomCourt(nom: string): string {
   const t = nom.replace(/^.+?·\s*\p{L}+\s*:\s*/iu, '').replace(/^front\s+\S+\s*:\s*/i, '').trim() || nom
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
-// Hauteurs relevées sur une capture du panneau (unités = pixels d'écran Retina) :
-// haut jusqu'au chef 585, groupe 62 + 64 par ligne, prochain lot 116 + 80 par ligne, bas 60.
-// Une rangée de la surface ≈ 36 unités : mesurée sur une capture (43 rangées pour un panneau de 1570 unités).
+// Heights measured on a panel screenshot (units = Retina screen pixels):
+// top down to the lead 585, group 62 + 64 per line, next batch 116 + 80 per line, bottom 60.
+// One surface row ≈ 36 units: measured on a screenshot (43 rows for a 1570-unit panel).
 export const UNITE_RANGEE = 36
 export function sujetsVisibles(x: { rangees?: number; groupes: number[]; fil: boolean; ligne2: boolean; autres: number; sujets: number }): number {
   if (!x.rangees) return Math.min(3, x.sujets)
   const pris = 585 + (x.fil ? 40 : 0) - (x.ligne2 ? 0 : 45) + x.groupes.reduce((t, n) => t + 62 + 64 * n, 0) + (x.autres ? 80 + 64 * x.autres : 0) + 116 + 60
   const place = Math.floor((x.rangees * UNITE_RANGEE - pris) / 80)
   if (place >= x.sujets) return x.sujets
-  return Math.max(1, place - 1) // une ligne gardée pour « + N autres »
+  return Math.max(1, place - 1) // one line kept for « + N autres »
 }
 
 const PROCHAIN = 'Pour de nouveaux agents, après ce lot.'
 
-// Une ligne « Toi : … » est pour la personne, pas pour un agent
+// A « Toi : … » line is for the person, not for an agent
 const TOI = /^toi\s*:\s*/i
 const pourToi = (l: string) => TOI.test(l)
 
-// Prochain lot rangé par sujet : « Sujet : tâche » ; sans sujet, la tâche va dans « À ranger »
+// Next batch sorted by topic: « Sujet : tâche »; without a topic, the task goes to « À ranger »
 export function sujets(attente: string[]): { nom: string; taches: string[] }[] {
   const m = new Map<string, string[]>()
   for (const l of attente) {
-    // un sujet est un nom court (quatre mots au plus, sans parenthèse ni guillemet) ; sinon le deux-points est dans la phrase
+    // a topic is a short name (four words at most, no parenthesis or quote); otherwise the colon is part of the sentence
     const m2 = l.match(/^([^:()«»"]{1,40}?)\s*:\s+(.+)$/)?.filter((_, i) => i < 3)
     if (m2 && m2[1].trim().split(/\s+/).length > 4) m2.length = 0
     const [nom, tache] = m2?.length ? couper(`${m2[1]}\u0000${m2[2]}`, '\u0000') : ['À ranger', l]
@@ -320,8 +320,8 @@ export function lirePlan(texte: string, dossier: string): Plan {
 const mediane = (v: number[]) => v[Math.floor((v.length - 1) / 2)]
 const centile80 = (v: number[]) => v[Math.floor(0.8 * (v.length - 1))]
 
-// Fourchette habituelle d'après l'historique ; au-delà de la médiane, on ne garde
-// que les agents passés qui ont duré au moins autant (durées à queue longue).
+// Usual range from history; above the median, only past agents
+// that lasted at least as long are kept (long-tailed durations).
 export function estimer(type: string, ecoule: number, durees: Duree[]) {
   const passes = durees.filter(d => d.type === type)
   if (passes.length < 5) return null
@@ -341,7 +341,7 @@ export function estimer(type: string, ecoule: number, durees: Duree[]) {
 const min = (ms: number) => Math.max(0, Math.round(ms / 60000))
 
 export const register: Register = on => {
-  // Données en mémoire du module : elles repartent à zéro à chaque rechargement du mod.
+  // Data held in module memory: reset on every reload of the mod.
   const suivis = new Map<string, Agent>()
   const missions = new Map<string, string>()
   let durees: Duree[] = []
@@ -350,33 +350,33 @@ export const register: Register = on => {
   let moi = ''
   let choisi = ''
   let retour = ''
-  let etapesDetail = false // fiche d'agent : étapes en entier plutôt que titre + une ligne
+  let etapesDetail = false // agent card: full steps rather than title + one line
   let plan: Plan | null = null
   let voisines: Voisine[] = []
-  const fils = new Map<string, Pas[]>() // fil d'actions par agent, dès sa première action
+  const fils = new Map<string, Pas[]>() // action feed per agent, from its first action
   let filSession: Pas[] = []
   let demande = ''
-  let relit = false // un message de la personne vient d'arriver : « À toi » est peut-être déjà répondu
+  let relit = false // a message from the person just arrived: « À toi » may already be answered
   let atoiAvant: string | null = null
-  let relitDepuis = 0, debutTour = 0 // un message tapé pendant un tour attend le suivant : seule la fin de ce tour-là le compte comme lu
-  let questionLive = '' // dernière question posée par la session, jusqu'à la réponse
-  let demandeFinie = true // la dernière demande tapée dans cette session
-  // travail en arrière-plan qui n'est pas un agent (commande, surveillance, workflow) : la liste du moteur à chaque fin de tour
+  let relitDepuis = 0, debutTour = 0 // a message typed during a turn waits for the next one: only the end of that turn counts it as read
+  let questionLive = '' // last question asked by the session, until the answer
+  let demandeFinie = true // the last request typed in this session
+  // background work that is not an agent (command, watch, workflow): the engine's list at each end of turn
   let fond: { id: string; quoi: string; debut: number; commande?: string }[] = []
   let restaure = false
-  let finisAEcrire = false // compte rendu arrivé : la copie gardée doit suivre
-  let passe = 0 // minutes inscrites au registre temps.csv du chantier
+  let finisAEcrire = false // report arrived: the saved copy must follow
+  let passe = 0 // minutes logged in the project's temps.csv
   let maintenant = 0
   let fichierLien = ''
-  let fichierFinis = '' // agents finis de cette session, gardés hors du chantier
-  let ecranVu = 0 // dernière hauteur vue, notée pour régler l'estimation
+  let fichierFinis = '' // finished agents of this session, kept outside the project
+  let ecranVu = 0 // last height seen, noted to tune the estimate
   let fichierEcran = ''
-  let fichierMissions = '' // briefs des agents de cette session, relus après un rechargement du mod
+  let fichierMissions = '' // briefs of this session's agents, reread after a mod reload
   let chercher = true
   let arreter: { cancel: () => void } | null = null
   const lances = new Map<string, number>()
-  const actions = new Map<string, number>() // actions par agent, comptées dès le départ
-  let parDossier = false // chantier trouvé par le dossier de travail : il prime
+  const actions = new Map<string, number>() // actions per agent, counted from the start
+  let parDossier = false // project found from the working folder: it takes priority
   let relancer: (() => Promise<void>) | null = null
   let ouvrirPanneau: (() => void) | null = null
 
@@ -388,9 +388,9 @@ export const register: Register = on => {
     fichierDurees = maison ? `${maison}/.claude/pilotage/durees.json` : ''
     try { durees = fichierDurees ? JSON.parse(await $.fs.read(fichierDurees)) : [] } catch { durees = [] }
 
-    // le chantier de CETTE session : PILOTAGE.md au-dessus du dossier de travail,
-    // sinon celui que la session a ouvert ou écrit (lien gardé dans ~/.claude/pilotage/sessions/).
-    // Jamais le chantier d'une autre session : sans lien, le panneau le dit.
+    // THIS session's project: PILOTAGE.md above the working folder,
+    // otherwise the one the session opened or wrote (link kept in ~/.claude/pilotage/sessions/).
+    // Never another session's project: without a link, the panel says so.
     const lien = () => maison ? `${maison}/.claude/pilotage/sessions/${moi}.txt` : ''
     fichierLien = lien()
     const finisDe = () => maison ? `${maison}/.claude/pilotage/finis/${moi}.json` : ''
@@ -401,12 +401,12 @@ export const register: Register = on => {
     const trouver = async () => {
       const avant = dossier
       for (let d = cwd; segments(d) > 2 && !dossier; d = parent(d)) {
-        try { await $.fs.read(`${d}/PILOTAGE.md`); dossier = d; parDossier = true } catch { /* plus haut */ }
+        try { await $.fs.read(`${d}/PILOTAGE.md`); dossier = d; parDossier = true } catch { /* higher up */ }
       }
       if (!dossier && fichierLien) {
-        try { dossier = (await $.fs.read(fichierLien)).trim() } catch { /* pas encore de lien */ }
+        try { dossier = (await $.fs.read(fichierLien)).trim() } catch { /* no link yet */ }
       }
-      // chantier découvert en cours de route (fichier créé par un agent ou un script) : ouverture seule
+      // project found along the way (file created by an agent or a script): open only
       if (dossier && dossier !== avant) ouvrir()
     }
     relancer = async () => { chercher = false; await trouver() }
@@ -415,7 +415,7 @@ export const register: Register = on => {
     let tour = 0
     const rafraichir = async () => {
       maintenant = await $.clock.now()
-      // /clear donne une nouvelle session sans session.start : on repart de zéro
+      // /clear gives a new session without session.start: start from scratch
       const id = (await $.session.id()).slice(0, 8)
       if (id !== moi) {
         moi = id
@@ -436,7 +436,7 @@ export const register: Register = on => {
       }
       if (!dossier && (chercher || tour % 6 === 0)) { chercher = false; await trouver() }
       tour++
-      // agents finis gardés : relus avant la liste, pour ne pas être écrasés par une copie vide
+      // kept finished agents: reread before the list, so an empty copy does not overwrite them
       if (!restaure && fichierFinis) {
         restaure = true
         try {
@@ -444,14 +444,14 @@ export const register: Register = on => {
             suivis.set(a.id, a)
             if (a.fil) fils.set(a.id, a.fil)
           }
-        } catch { /* première fois */ }
+        } catch { /* first time */ }
         try {
           const m = JSON.parse(await $.fs.read(fichierMissions)) as Record<string, { mission: string; lance: number }>
           for (const [d, v] of Object.entries(m)) {
             if (!missions.has(d)) missions.set(d, v.mission)
             if (!lances.has(d)) lances.set(d, v.lance)
           }
-        } catch { /* aucun brief gardé */ }
+        } catch { /* no saved brief */ }
       }
       let finiNeuf = false
       for (const i of await $.agent.list()) {
@@ -473,18 +473,18 @@ export const register: Register = on => {
         if (FINIS.includes(i.status) && !a.fin) {
           a.fin = maintenant
           finiNeuf = true
-          // seulement un agent dont on a vu le départ ; le fichier est relu juste avant (sessions concurrentes)
+          // only an agent whose start we saw; the file is reread just before (concurrent sessions)
           if (a.departVu && fichierDurees) {
-            try { durees = JSON.parse(await $.fs.read(fichierDurees)) } catch { /* on garde la copie */ }
+            try { durees = JSON.parse(await $.fs.read(fichierDurees)) } catch { /* keep the copy */ }
             durees.push({ type: a.type, minutes: Math.round((a.fin - a.debut) / 6000) / 10, outils: a.outils })
-            try { await $.fs.write(fichierDurees, JSON.stringify(durees)) } catch { /* l'historique attendra */ }
+            try { await $.fs.write(fichierDurees, JSON.stringify(durees)) } catch { /* the history will wait */ }
           }
         }
       }
       if ((finiNeuf || finisAEcrire) && fichierFinis) {
         finisAEcrire = false
         const finis = [...suivis.values()].filter(a => a.fin).slice(-20)
-        try { await $.fs.write(fichierFinis, JSON.stringify(finis)) } catch { /* gardés en mémoire seulement */ }
+        try { await $.fs.write(fichierFinis, JSON.stringify(finis)) } catch { /* kept in memory only */ }
       }
       if (dossier) {
         try { plan = lirePlan(await $.fs.read(`${dossier}/PILOTAGE.md`), dossier) }
@@ -504,15 +504,15 @@ export const register: Register = on => {
             try {
               const v = JSON.parse(await $.fs.read(`${partage}/${x.name}`))
               if (maintenant - (v.maj ?? 0) < VIEUX_MS) autres.push({ ...v, agents: v.agents ?? [] })
-            } catch { /* en cours d'écriture */ }
+            } catch { /* being written */ }
           }
-        } catch { /* dossier partagé indisponible : cette session seule */ }
+        } catch { /* shared folder unavailable: this session only */ }
         voisines = autres
-        // registre de temps : le temps.csv le plus proche, dans le chantier ou au-dessus (toutes les 30 s)
+        // time log: the nearest temps.csv, in the project or above (every 30 s)
         if (tour % 6 === 1) {
           passe = 0
           for (let d = dossier; segments(d) > 2; d = parent(d)) {
-            try { passe = tempsPasse(await $.fs.read(`${d}/temps.csv`)); break } catch { /* plus haut */ }
+            try { passe = tempsPasse(await $.fs.read(`${d}/temps.csv`)); break } catch { /* higher up */ }
           }
         }
       }
@@ -533,16 +533,16 @@ export const register: Register = on => {
     return { text: dossier ? 'Panneau Pilotage ouvert.' : 'Panneau ouvert ; aucun chantier lié à cette session pour l’instant.' }
   })
 
-  // mission de chaque agent (son brief), actions de l'agent, messages reçus
+  // each agent's mission (its brief), the agent's actions, messages received
   on('tool.call', async ($, e, next) => {
     const x = e as any
     if (x.tool === 'Agent' && x.description) {
       missions.set(x.description, String(x.prompt ?? '').slice(0, 4000))
       lances.set(x.description, await $.clock.now())
       if (fichierMissions) {
-        // fusion avec le fichier : un agent lancé avant la relecture ne doit pas effacer les briefs gardés
+        // merge with the file: an agent launched before the reread must not erase the saved briefs
         let garde: Record<string, unknown> = {}
-        try { garde = JSON.parse(await $.fs.read(fichierMissions)) } catch { /* rien de gardé */ }
+        try { garde = JSON.parse(await $.fs.read(fichierMissions)) } catch { /* nothing saved */ }
         const m = { ...garde, ...Object.fromEntries([...missions].map(([d, mission]) => [d, { mission, lance: lances.get(d) ?? 0 }])) }
         void $.fs.write(fichierMissions, JSON.stringify(m)).catch(() => {})
       }
@@ -554,12 +554,12 @@ export const register: Register = on => {
       fond = [...fond, { id: 'b' + (x.tool_use_id ?? x.toolUseId ?? quand), quoi, debut: quand, commande: String(x.command ?? x.input?.command ?? '') }]
       $.ui.invalidate('ui.render')
     }
-    // une question posée par la session (case de fin de tour, question à choix) va d'office dans « À toi »
+    // a question asked by the session (end-of-turn box, multiple-choice question) goes straight to « À toi »
     if (!x.agentId) {
       const q = /wrap_up$/.test(String(x.tool)) ? x.ask ?? x.input?.ask
         : x.tool === 'AskUserQuestion' ? (x.questions ?? x.input?.questions)?.[0]?.question : undefined
       if (q) { questionLive = String(q); $.ui.invalidate('ui.render') }
-      // le sélecteur de AskUserQuestion rend la main une fois la réponse donnée
+      // the AskUserQuestion picker hands back control once the answer is given
       if (q && x.tool === 'AskUserQuestion') {
         const r = await next(e)
         questionLive = ''
@@ -567,21 +567,21 @@ export const register: Register = on => {
         return r
       }
     }
-    // fil visible : les douze dernières actions, sans le bruit des outils de l'appli
+    // visible feed: the last twelve actions, without the noise of the app's tools
     if (!String(x.tool).startsWith('mcp__ccd_')) {
       const pas = { t: await $.clock.now(), quoi: action(String(x.tool), x) }
       if (x.agentId) fils.set(x.agentId, [...(fils.get(x.agentId) ?? []), pas].slice(-12))
       else { filSession = [...filSession, pas].slice(-12); $.ui.invalidate('ui.render') }
     }
-    // la session touche un PILOTAGE.md : c'est son chantier
+    // the session touches a PILOTAGE.md: it is its project
     const chemin = String(x.file_path ?? '')
     if (!x.agentId && !parDossier && ['Read', 'Write', 'Edit'].includes(x.tool) && chemin.endsWith('/PILOTAGE.md')) {
       const d = parent(chemin)
       if (d !== dossier) {
         dossier = d
         chercher = false
-        if (fichierLien) { try { await $.fs.write(fichierLien, d) } catch { /* lien perdu au rechargement */ } }
-        // chantier trouvé en cours de route : le panneau s'ouvre seul, sans commande
+        if (fichierLien) { try { await $.fs.write(fichierLien, d) } catch { /* link lost on reload */ } }
+        // project found along the way: the panel opens by itself, no command needed
         ouvrirPanneau?.()
       }
     }
@@ -592,15 +592,15 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // la demande en cours de la session (le texte tapé), pour sa vue détail
-  // un message tapé par la personne (ni commande comme /btw, ni message caché) répond à la question en cours
+  // the session's current request (the typed text), for its detail view
+  // a message typed by the person (not a command like /btw, not a hidden message) answers the current question
   on('prompt.submit', async ($, e, next) => {
     if (!e.isMeta && !e.command) { questionLive = ''; relit = true; atoiAvant = null; relitDepuis = await $.clock.now(); $.ui.invalidate('ui.render') }
     return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
-    // tout tour de la session (message tapé, notification, message d'une autre session) la met au travail
+    // any session turn (typed message, notification, message from another session) puts it to work
     if (!e.agentId) { demandeFinie = false; debutTour = await $.clock.now() }
     if (!e.agentId && e.text) demande = e.text.slice(0, 300)
     return next(e)
@@ -611,7 +611,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // fin de tour de la session : ce qui tourne encore en arrière-plan, sauf les agents déjà suivis
+  // end of the session's turn: what is still running in the background, except agents already tracked
   on('classic.Stop', async ($, e, next) => {
     const x = e as any
     const t = await $.clock.now()
@@ -619,7 +619,7 @@ export const register: Register = on => {
       .filter(b => b.type !== 'subagent' && !/^(completed|failed|killed)$/.test(String(b.status)))
       .map(b => {
         const quoi = String(b.description || b.command || b.type).split('\n')[0]
-        // le départ vu au lancement est gardé (même id, ou même description)
+        // the start seen at launch is kept (same id, or same description)
         const vu = fond.find(f => f.id === String(b.id)) ?? fond.find(f => f.quoi === quoi)
         return { id: String(b.id), quoi, debut: vu?.debut ?? t, commande: String(b.command || vu?.commande || '') }
       })
@@ -641,7 +641,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // panneau fermé ou rouvert : le bandeau se redessine aussitôt
+  // panel closed or reopened: the band redraws at once
   on('ui.close', async ($, e, next) => {
     const r = await next(e)
     $.ui.invalidate('ui.render')
@@ -650,7 +650,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!plan || e.props.hasSurvey) return next(e)
-    // panneau déjà affiché : le bandeau se retire
+    // panel already shown: the band is removed
     const panneauVu = (await $.ui.panes()).some(x => x.id === PANE && x.isShown && x.isPlaced)
     if (panneauVu) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e) as any
@@ -666,11 +666,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e) as any
     const t = maintenant
-    // depuis la liste Fait, « Retour » d'un agent y ramène
+    // from the Done list, an agent's « Retour » leads back there
     const voir = (id: string) => () => { retour = choisi === 'fait' && id ? 'fait' : ''; choisi = id; $.ui.invalidate('ui.render') }
     const copier = (texte: string) => () => { void $.ui.copy({ text: texte, surface: e.surface }) }
     const titre = (s: string) => <Text dimColor size="caption" weight="medium">{s.toUpperCase()}</Text>
-    // « ? » : prépare dans la zone de saisie une question /btw sur ce point, sans interrompre Claude
+    // « ? »: prepares a /btw question about this point in the input box, without interrupting Claude
     const question = (sujet: string) => (
       <Button plain onPress={() => { void $.prompt.fill({ text: `/btw Question sur « ${sujet} » : ` }) }}>?</Button>
     )
@@ -687,27 +687,27 @@ export const register: Register = on => {
       )
     }
     const p = plan
-    // ce qui bloque la suite d'abord : la question posée en fin de tour, puis les lignes « ! » du plan
+    // what blocks progress first: the end-of-turn question, then the plan's « ! » lines
     const miens = [...suivis.values()]
-    // ce qui bloque la suite : la question posée en fin de tour (fondue dans le point du plan qui en parle) et les lignes « ! »
+    // what blocks progress: the end-of-turn question (merged into the plan point that mentions it) and the « ! » lines
     const pointsToi = p.atoi.map(l => ({ t: l.replace(/^!\s*/, ''), bloque: /^!/.test(l) }))
-    // la question de fin de tour ne vaut que tour fini : dès que Claude se remet au travail, elle n'attend plus
+    // the end-of-turn question only counts once the turn is over: as soon as Claude works again, it no longer waits
     if (questionLive && demandeFinie) {
       const meme = pointsToi.find(x => appartient({ front: '', nom: x.t }, questionLive))
       if (meme) meme.bloque = true
       else pointsToi.unshift({ t: `Répondre : ${questionLive}`, bloque: true })
     }
     const aToi = [...pointsToi.filter(x => x.bloque), ...pointsToi.filter(x => !x.bloque)].map(x => x.t)
-    // après un message de la personne, les points d'avant ne valent plus tant que Claude n'a pas relu « À toi »
-    // (il le réécrit, ou finit son tour)
+    // after a message from the person, earlier points no longer count until Claude has reread « À toi »
+    // (it rewrites it, or ends its turn)
     const cleAToi = JSON.stringify(p.atoi)
     if (relit && atoiAvant === null) atoiAvant = cleAToi
     else if (relit && atoiAvant !== cleAToi) relit = false
     const bloquants = new Set(pointsToi.filter(x => x.bloque).map(x => x.t))
-    // plus rien ne tourne : la suite dépend de toi
-    // (les tâches de fond n'en décident pas : serveurs et surveillances tournent sans fin)
+    // nothing is running anymore: what comes next is up to you
+    // (background tasks do not decide this: servers and watches run forever)
     const arret = demandeFinie && miens.every(x => x.fin)
-    // un agent n'appartient qu'à un seul front : nom exact, puis lettre (« F »), puis mots communs
+    // an agent belongs to one front only: exact name, then letter (« F »), then shared words
     const nomsFronts = p.fronts.map(f => f.cells[0]).filter(Boolean)
     const egal = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
     const codeAgent = (x: Agent) => codeFront(x.nom) || codeFront(x.front + ' : ')
@@ -715,7 +715,7 @@ export const register: Register = on => {
       ?? (codeAgent(x) ? nomsFronts.find(f => codeFront(f) === codeAgent(x)) : undefined)
       ?? nomsFronts.find(f => appartient(x, f))
 
-    // fil d'actions : les plus récentes en haut, avec leur âge
+    // action feed: most recent on top, with their age
     const fil = (pas: Pas[] = []) => pas.length === 0
       ? [<Text key="vide" dimColor>Aucune action vue pour l’instant.</Text>]
       : [...pas].reverse().slice(0, 12).map((x, k) => (
@@ -725,7 +725,7 @@ export const register: Register = on => {
         </Box>
       ))
 
-    // détail de la session elle-même
+    // detail of the session itself
     if (choisi === 'ici') {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
@@ -739,7 +739,7 @@ export const register: Register = on => {
       )
     }
 
-    // liste numérotée : chaque point en gras, son détail en dessous
+    // numbered list: each point in bold, its detail below
     const points = (lignes: string[], parPoint = false) => lignes.map((l, k) => {
       const [quoi, detail] = couper(l, ' : ')
       const tete = <Text weight="medium">{k + 1}. {quoi}</Text>
@@ -775,7 +775,7 @@ export const register: Register = on => {
       )
     }
 
-    // fiche d'un front que le panneau n'a pas vu tourner : ce que dit le plan
+    // card for a front the panel has not seen running: what the plan says
     if (choisi.startsWith('front:')) {
       const f = p.fronts.find(x => x.cells[0] === choisi.slice(6))
       return (
@@ -792,7 +792,7 @@ export const register: Register = on => {
       )
     }
 
-    // agent d'une autre session du chantier : ce que cette session en sait
+    // agent of another session on the project: what this session knows about it
     if (choisi.startsWith('autre:')) {
       const [, id, ...reste] = choisi.split(':')
       const nom = reste.join(':')
@@ -807,7 +807,7 @@ export const register: Register = on => {
       )
     }
 
-    // détail d'un agent (niveau 2) : sa mission, où il en est ou ce qu'il a rendu, pourquoi
+    // agent detail (level 2): its mission, where it stands or what it returned, why
     const a = suivis.get(choisi)
     if (a) {
       const front = p.fronts.find(f => f.cells[0] === frontDe(a))
@@ -824,7 +824,7 @@ export const register: Register = on => {
           {bloc('Sa mission', <Text>{mission(a.mission) || 'Brief non capté (agent lancé avant cette version du panneau).'}</Text>)}
           {etapes(a.mission).length > 0 && bloc('Ses étapes', [
             ...etapes(a.mission).map((x, k) => etapesDetail && etapes(a.mission).some(aDuDetail)
-              // en entier : une carte par étape, le numéro sur la ligne du titre, le texte en retrait dessous
+              // full: one card per step, the number on the title line, the text indented below
               ? <Box key={k} flexDirection="column" gap="xs" paddingX="md" paddingY="sm" borderStyle="round" borderDimColor>
                   <Box flexDirection="row" gap="sm">
                     <Text color="suggestion" weight="semibold">{k + 1}</Text>
@@ -855,15 +855,15 @@ export const register: Register = on => {
       )
     }
 
-    // agents rangés par front du plan ; un agent fini reste visible quinze minutes
-    // tous les agents de la session : le groupe Fait n'en montre que trois
+    // agents sorted by plan front; a finished agent stays visible for fifteen minutes
+    // all the session's agents: the Done group shows only three
     const visibles = miens
     const horsPlan = visibles.filter(x => !frontDe(x))
 
 
-    // une ligne : pastille et nom à gauche, temps à droite
+    // one line: dot and name on the left, time on the right
     const ligne = (cle: string, point: string, couleur: string, nom: string, droite: string, opts: { onPress?: () => void; teinte?: string; charge?: boolean } = {}) => {
-      // la pastille reste hors du bouton : un bouton efface la couleur de son texte
+      // the dot stays outside the button: a button clears its text color
       const nomTexte = [<Text key="n" color={opts.teinte}>{uneLigne(nom, 34)}</Text>, ...(opts.charge ? [<Text key="c" color="warning"> · chargé</Text>] : [])]
       return (
         <Box key={cle} flexDirection="row" justifyContent="space-between" paddingY="xs" gap="sm">
@@ -893,9 +893,9 @@ export const register: Register = on => {
     )
 
     const auTravail = miens.filter(x => !x.fin).length + fond.length
-    // plus rien ne tourne : la suite dépend de toi
+    // nothing is running anymore: what comes next is up to you
 
-    // équipe rangée par état : chaque ligne est un agent (une tâche), ou un front du plan sans agent vu
+    // team sorted by state: each line is an agent (a task), or a plan front with no agent seen
     type Element = { etat: 'cours' | 'lancer' | 'fait'; ordre: number; el: any }
     const elements: Element[] = []
     for (const f of p.fronts) {
@@ -904,15 +904,15 @@ export const register: Register = on => {
       if (vivants.length) continue
       const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
       const c = couleurPlan(etat)
-      // front fini : la ligne du plan mène au dernier agent qui l'a tenu
+      // finished front: the plan line leads to the last agent that held it
       const dernierAgent = miens.filter(x => frontDe(x) === f.cells[0]).sort((x, y) => y.debut - x.debut)[0]
       elements.push({ etat: c === 'success' ? 'fait' : c === 'inactive' ? 'lancer' : 'cours', ordre: 0,
         el: ligne(f.cells[0], etatPlan(etat), c, f.cells[0], etat, { onPress: voir(dernierAgent ? dernierAgent.id : 'front:' + f.cells[0]) }) })
     }
     for (const x of horsPlan) elements.push({ etat: x.fin ? 'fait' : 'cours', ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
     const ligneFond = (f: typeof fond[number], n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', nomTache(f.quoi) + (n > 1 ? ` ×${n}` : ''), `${Math.max(1, min(t - f.debut))} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
-    // fiche d'une tâche du chef : à quoi elle sert, depuis quand, sa commande
-    // l'id peut changer en fin de tour (celui du moteur remplace celui du lancement) : on retombe sur le nom
+    // card for a lead task: what it is for, since when, its command
+    // the id may change at end of turn (the engine's id replaces the launch one): fall back on the name
     const [tacheId, tacheQuoi] = choisi.startsWith('tache:') ? choisi.slice(6).split('\u0000') : []
     const tache = tacheId ? fond.find(f => f.id === tacheId) ?? fond.find(f => f.quoi === tacheQuoi) : undefined
     if (tache) {
@@ -930,7 +930,7 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // les tâches du chef (commandes, serveurs, surveillances) : leur propre groupe, pour ne pas les confondre avec les agents
+    // the lead's tasks (commands, servers, watches): their own group, so they are not confused with agents
     const parNom = new Map<string, typeof fond>()
     for (const f of [...fond].sort((a, b) => a.debut - b.debut)) parNom.set(nomTache(f.quoi), [...(parNom.get(nomTache(f.quoi)) ?? []), f])
     const tachesChef = [...parNom.values()].map(l => ({ etat: 'cours' as const, ordre: l[0].debut, el: ligneFond(l[0], l.length) }))
@@ -946,7 +946,7 @@ export const register: Register = on => {
       </Box>
     )
 
-    // tout ce qui est fait, au clic sur « + N autres »
+    // everything done, on clicking « + N autres »
     if (choisi === 'fait') {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
@@ -961,7 +961,7 @@ export const register: Register = on => {
     const [numero, action] = couper(etape, ' : ')
     const ligne2 = [action, passe > 0 ? `${duree(passe)} passées` : ''].filter(Boolean).join(' · ')
     const groupes = sujets(p.attente)
-    // le prochain lot prend la place qui reste à l'écran, pour que la vue d'ensemble tienne sans défiler
+    // the next batch takes the remaining screen space, so the overview fits without scrolling
     const avant = [enCours.length, tachesChef.length, aLancer.length, Math.min(faits.length, 3) + (faits.length > 3 ? 1 : 0)]
     const nSujets = sujetsVisibles({
       rangees: e.viewport?.rows,

@@ -29,7 +29,7 @@ const PANE = {
   props: { title: 'Pilotage', isFocused: false, bodyColumns: 40, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
-test('le démarrage passe avec un plan et un agent en cours', async ($, on) => {
+test('startup works with a plan and a running agent', async ($, on) => {
   on('command.register', () => ({ value: { command: 'panneau-pilotage' } }))
   const ouverts: string[] = []
   const ecrits: string[] = []
@@ -47,7 +47,7 @@ test('le démarrage passe avec un plan et un agent en cours', async ($, on) => {
 
   await $.session.start({ cwd: '/Users/test/chantier', surface: 'desktop', isInteractive: true })
 
-  // le dessin n'est pas disponible dans le banc de test de cette version : on vérifie les effets
+  // rendering is not available in this version's test bench: we check the side effects
   await new Promise(r => setTimeout(r, 0))
   expect(ouverts).toContain('pilotage')
   expect(ecrits).toContain('/Users/test/chantier/.pilotage/abcdef12.json')
