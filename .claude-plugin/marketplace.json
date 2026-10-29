@@ -1,0 +1,5 @@
+{
+  "name": "claude-code-pilotage",
+  "owner": { "name": "Anderson Gomes" },
+  "plugins": [{ "name": "pilotage", "source": "./" }]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "pilotage",
+  "version": "0.22.1",
+  "description": "Panneau de pilotage d'un chantier : cap, équipe (sessions, fronts, agents), durées habituelles, ce qui t'attend"
+}
