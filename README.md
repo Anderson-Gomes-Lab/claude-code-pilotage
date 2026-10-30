@@ -108,7 +108,7 @@ Cap : Website v1, batch 2 of 3 : project pages
 | `## Sessions` | sessions | one row per Claude session working on the project. |
 | `## Fronts` | workstreams | one workstream = its own files and a deliverable. Recognised states (`État`): `à lancer` (to start), `en cours` (running), `rendu` (delivered), `contrôlé` (reviewed). |
 | `## Fait` | done | one plain line per finished batch, with the date. |
-| `## À toi` | your turn | what you can do **now**, nothing else (question, approval, test, screenshot), as `Topic : detail`. A leading `!` marks what blocks the rest: it comes first. Empty when there is nothing: a line wholly in parentheses is ignored. |
+| `## À toi` | your turn | what you can do **now**, nothing else (question, approval, test, screenshot), as `Topic : detail`. A leading `!` marks what stops the work until you act: it comes first, and only then does the pane say Claude is waiting. Anything else is your own to-do, for when you can. Empty when there is nothing: a line wholly in parentheses is ignored. |
 | `## En attente` | waiting | each line starts with its owner: a short topic (the pane groups by topic) or `Toi :` (something for you, later; shown as "Toi, plus tard"). |
 | `Livré :` | delivered | optional line under `Cap :`, with a date: the project is finished. The pane says so under the title. |
 

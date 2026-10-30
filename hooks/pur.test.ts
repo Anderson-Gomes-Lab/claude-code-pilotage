@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -275,4 +275,13 @@ test('a workstream run by the session has no agent', () => {
   expect(sansAgent('')).toBe(true)
   expect(sansAgent()).toBe(true)
   expect(sansAgent('Home · construction : pages')).toBe(false)
+})
+
+test('Claude waits only on a blocking point', () => {
+  expect(attendToi(0, true)).toBe(false)
+  expect(attendToi(1, false)).toBe(false)
+  expect(attendToi(1, true)).toBe(true)
+  expect(phraseAToi(0, true, false)).toBe('Rien ne bloque : à faire quand tu peux.')
+  expect(phraseAToi(1, true, false)).toBe('Claude attend ta réponse pour continuer.')
+  expect(phraseAToi(0, true, true)).toBe('Claude réfléchit : ces points peuvent changer.')
 })

@@ -337,6 +337,13 @@ export function etatVoisine(s: Pick<Voisine, 'maj' | 'auTravail' | 'agents'>, t:
   return t - s.maj > PAUSE_MS ? 'en pause' : s.auTravail === false && !s.agents.length ? 'attend' : 'au travail'
 }
 
+// « Claude t'attend » only for a blocking point: the other points are the person's own to-do, not a stop
+export const attendToi = (bloquants: number, arret: boolean) => arret && bloquants > 0
+export function phraseAToi(bloquants: number, arret: boolean, relit: boolean): string {
+  if (relit) return 'Claude réfléchit : ces points peuvent changer.'
+  if (!bloquants) return 'Rien ne bloque : à faire quand tu peux.'
+  return arret ? 'Claude attend ta réponse pour continuer.' : 'Tu peux répondre tout de suite : ton message attend son tour, Claude ne s’arrête pas.'
+}
 export const sansAgent = (cellule = '') => /^[\s—–-]*$/.test(cellule)
 
 // what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
@@ -744,6 +751,7 @@ export const register: Register = on => {
     // nothing is running anymore: what comes next is up to you
     // (background tasks do not decide this: servers and watches run forever)
     const arret = demandeFinie && miens.every(x => x.fin)
+    const attend = attendToi(bloquants.size, arret)
     // an agent belongs to one front only: exact name, then letter (« F »), then shared words
     const nomsFronts = p.fronts.map(f => f.cells[0]).filter(Boolean)
     const egal = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
@@ -798,7 +806,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="lg" padding="sm">
           <Button plain onPress={voir('')}>← Retour</Button>
           <Text dimColor size="footnote">{choisi === 'atoi'
-            ? (relit ? 'Claude réfléchit : ces points peuvent changer.' : arret ? 'Claude attend ta réponse pour continuer.' : 'Tu peux répondre tout de suite : ton message attend son tour, Claude ne s’arrête pas.')
+            ? phraseAToi(bloquants.size, arret, relit)
             : PROCHAIN}</Text>
           {vue.map(g => (
             <Box key={g.nom} flexDirection="column" gap="xs" borderStyle="round" borderDimColor padding="sm">
@@ -1049,8 +1057,8 @@ export const register: Register = on => {
               <Text dimColor>⏳ Claude réfléchit · rien à faire</Text>
             </Box>
           : aToi.length > 0
-          ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={arret ? 'warning' : 'suggestion'}>
-              <Text weight="semibold" color={arret ? 'warning' : 'suggestion'}>☞ À toi · {aToi.length} point{aToi.length > 1 ? 's' : ''}{arret ? ' · Claude t’attend' : ''}</Text>
+          ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={attend ? 'warning' : 'suggestion'}>
+              <Text weight="semibold" color={attend ? 'warning' : 'suggestion'}>☞ À toi · {aToi.length} point{aToi.length > 1 ? 's' : ''}{attend ? ' · Claude t’attend' : ''}</Text>
               <Button plain onPress={voir('atoi')}>Voir</Button>
             </Box>
           : <Box paddingX="md" paddingY="sm" borderStyle="round" borderDimColor>

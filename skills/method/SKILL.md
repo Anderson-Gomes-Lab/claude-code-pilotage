@@ -102,4 +102,4 @@ Cap : <deliverable>, <stage> : <current action>
 - Toi : something for the person, later
 ```
 
-`État` is one of: `à lancer`, `en cours`, `rendu`, `contrôlé`. A leading `!` in `## À toi` marks what blocks the rest: it comes first, in orange. Full examples: `examples/` in the mod's repository.
+`État` is one of: `à lancer`, `en cours`, `rendu`, `contrôlé`. A leading `!` in `## À toi` marks what stops the work until they act: it comes first, in orange, and only then does the pane say you are waiting. A task of theirs that stops nothing today takes no `!`, even if it will block later. Full examples: `examples/` in the mod's repository.
