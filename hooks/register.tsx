@@ -865,7 +865,7 @@ export const register: Register = on => {
     const titre = (s: string) => <Text dimColor size="caption" weight="medium">{s.toUpperCase()}</Text>
     const bloc = (nom: string, contenu: any) => <Box flexDirection="column" gap="xs">{titre(nom)}{contenu}</Box>
     const depuis = (debut: number, fin = t) => Math.max(1, min(fin - debut))
-    const retourAccueil = <Button plain onPress={voir('')}>← Retour</Button>
+    const retourAccueil = <Button key="retour" plain onPress={voir('')}>← Retour</Button>
     // « ? »: prepares a /btw question about this point in the input box, without interrupting Claude
     const question = (sujet: string) => (
       <Button plain onPress={() => { void $.prompt.fill({ text: `/btw Question sur « ${sujet} » : ` }) }}>?</Button>
@@ -1010,7 +1010,7 @@ export const register: Register = on => {
       const front = p.fronts.find(f => f.cells[0] === frontDe(a))
       return (
         <Box flexDirection="column" gap="lg" padding="sm">
-          <Button plain onPress={voir(retour)}>← Retour</Button>
+          <Button key="retour" plain onPress={voir(retour)}>← Retour</Button>
           <Box flexDirection="column" gap="xs">
             {avecQuestion(<Text weight="semibold">{nomCourt(a.nom)}</Text>, `l'agent ${nomCourt(a.nom)}`)}
             <Text dimColor size="footnote">{[codeAgent(a) ? `Agent ${codeAgent(a)}` : '', etatAgent(a).texte, `${depuis(a.debut, a.fin)} min`, a.outils ? `${a.outils} action${a.outils > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</Text>
@@ -1040,7 +1040,7 @@ export const register: Register = on => {
                   </Box>
                   {etapeCourte(x).ligne && <Box paddingLeft="lg"><Text dimColor size="footnote">{etapeCourte(x).ligne}</Text></Box>}
                 </Box>),
-            etapes(a.mission).some(aDuDetail) && <Box key="d" flexDirection="row"><Button variant="secondary" onPress={() => { etapesDetail = !etapesDetail; $.ui.invalidate('ui.render') }}>{etapesDetail ? 'Résumer' : 'Tout le détail'}</Button></Box>,
+            etapes(a.mission).some(aDuDetail) && <Box key="d" flexDirection="row"><Button key="detail" variant="secondary" onPress={() => { etapesDetail = !etapesDetail; $.ui.invalidate('ui.render') }}>{etapesDetail ? 'Résumer' : 'Tout le détail'}</Button></Box>,
           ])}
           {a.fin && a.statut !== 'perdu' && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Pas de compte rendu.'}</Text>)}
           {a.pourquoi && bloc('Pourquoi', <Text>{a.pourquoi}</Text>)}
@@ -1181,7 +1181,7 @@ export const register: Register = on => {
         {bandeau.couleur
           ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={bandeau.couleur}>
               <Text weight="semibold" color={bandeau.couleur}>{bandeau.texte}</Text>
-              <Button plain onPress={voir('atoi')}>Voir</Button>
+              <Button key="atoi" plain onPress={voir('atoi')}>Voir</Button>
             </Box>
           : <Box paddingX="md" paddingY="sm" borderStyle="round" borderDimColor>
               <Text dimColor>{bandeau.texte}</Text>
