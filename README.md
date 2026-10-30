@@ -24,11 +24,13 @@ The pane answers those three questions at a glance, without typing anything.
 
 The overview fits on one screen; details open on click.
 
+**Live or planned, never mixed.** Every present state (at work, running, waiting, the counts) comes from a live measurement of the session. What comes from `PILOTAGE.md` is an intention and is never shown as a present state. What cannot be measured is not affirmed: it reads "sans nouvelles" (no news) or the time it was last seen.
+
 | Block (French label) | What you see |
 | --- | --- |
 | **À toi** (your turn) | one line at the top. **Blue**: items you can handle. **Orange**: Claude stopped and is waiting for you. **Grey** "Claude réfléchit · rien à faire" (Claude is thinking, nothing to do): your items come back when it is done. A click shows the list: "À répondre maintenant" (answer now), then "Quand tu peux" (when you can). |
 | **Objectif** (goal) | the deliverable and the stage, the current action, the time spent. |
-| **Équipe** (team) | the **chef** (the session itself) and its state; while it works, `↳` says what it is doing. Then **Agents en cours** (running agents), **Tâches du chef** (⚙ commands, servers started in the background — not agents, and not the automatic watches), **À lancer** (to start), **Fait** (done). |
+| **Équipe** (team) | the **chef** (the session itself) and its state; while it works, `↳` says what it is doing. Then **Agents en cours** (running agents), **Tâches du chef** (⚙ commands, servers started in the background, as last seen at the end of a turn — not agents, and not the automatic watches), **À lancer** (to start), **Fait** (done). |
 | **Prochain lot** (next batch) | upcoming work grouped by subject, as many subjects as the screen holds, the rest as "+ N autres". |
 | **Other sessions** | sessions on the same project, named by their current request. A click shows what each one is doing. |
 | **?** | next to an agent, a task, a subject or an item: fills `/btw Question sur « … » :` in the prompt box, to ask a question without interrupting Claude. |

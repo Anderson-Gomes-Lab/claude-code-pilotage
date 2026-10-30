@@ -44,6 +44,7 @@ export type Voisine = {
   agents: { nom: string; statut: string; debut: number }[]
   // what this session is doing, for the other sessions of the project
   demande?: string
-  auTravail?: boolean
+  // null: not known (reload during a turn)
+  auTravail?: boolean | null
   quoi?: string
 }

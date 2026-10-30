@@ -16,7 +16,7 @@ const MOTS: [string, string][] = [
 ]
 const FINIS = ['completed', 'failed', 'killed']
 // Every state the panel shows: its word, its dot, its color, and the Team group it falls in
-type Etat = { texte: string; point: string; couleur: string; groupe: 'cours' | 'lancer' | 'fait' }
+type Etat = { texte: string; point: string; couleur: string; groupe: 'cours' | 'arret' | 'lancer' | 'fait' }
 const ETATS: Record<string, Etat> = {
   enCours: { texte: 'en cours', point: '●', couleur: 'suggestion', groupe: 'cours' },
   attend: { texte: 'attend', point: '●', couleur: 'warning', groupe: 'cours' },
@@ -26,8 +26,14 @@ const ETATS: Record<string, Etat> = {
   // a plan line in failure has to be started again, unlike an agent that ended
   echecPlan: { texte: 'échec', point: '○', couleur: 'error', groupe: 'lancer' },
   aLancer: { texte: 'à lancer', point: '○', couleur: 'inactive', groupe: 'lancer' },
+  demarre: { texte: 'démarre', point: '●', couleur: 'suggestion', groupe: 'cours' },
+  repos: { texte: 'attend un message', point: '○', couleur: 'inactive', groupe: 'arret' },
+  // gone from the engine's list without a final status: how it ended is unknown
+  perdu: { texte: 'sans nouvelles', point: '?', couleur: 'inactive', groupe: 'arret' },
 }
-const PAUSE_MS = 120_000
+const PAUSE_MS = 30_000 // a session writes its state every 5 s: this long without it, nothing is known
+const RELU_MS = 30_000 // a message that started no turn by then will not be read soon
+const FOND_FRAIS_MS = 120_000 // the engine lists background work at end of turn only: past this, the list is a memory
 
 type Duree = { type: string; minutes: number; outils: number }
 
@@ -64,14 +70,14 @@ export function couper(texte: string, sep: string): [string, string] {
 }
 
 // The band above the input box: the panel's essentials on one line.
-export function resume(plan: Plan, enCours: number, enPlus = 0): string {
+export function resume(plan: Plan, enCours: number, aToi = plan.atoi.length): string {
   const [, etape] = couper(plan.cap, ', ')
   const [numero] = couper(etape, ' : ')
   return [
     'Pilotage',
     numero,
     enCours > 0 ? `${enCours} agent${enCours > 1 ? 's' : ''} en cours` : '',
-    plan.atoi.length + enPlus > 0 ? `À toi : ${plan.atoi.length + enPlus}` : '',
+    aToi > 0 ? `À toi : ${aToi}` : '',
   ].filter(Boolean).join(' · ')
 }
 
@@ -251,17 +257,18 @@ export function phrases(texte = ''): string[] {
 // A watch set automatically when a page is published: it is no one's work
 export const estVeille = (quoi = '') => /live updates? for artifact/i.test(quoi)
 
-type Fond = { id: string; quoi: string; debut: number; commande?: string }
+// `vu`: when the engine last said it was there
+type Fond = { id: string; quoi: string; debut: number; vu: number; commande?: string }
 
 // End of turn: the engine's background work, except agents (tracked apart), what ended, and watches
 export function tachesDeFond(taches: any[], connues: Fond[], t: number): Fond[] {
   return taches
-    .filter(b => b.type !== 'subagent' && !FINIS.includes(String(b.status)))
+    .filter(b => b.type !== 'subagent' && b.type !== 'monitor' && !FINIS.includes(String(b.status)))
     .map(b => {
       const quoi = String(b.description || b.command || b.type).split('\n')[0]
       // the start seen at launch is kept (same id, or same description)
       const vu = connues.find(f => f.id === String(b.id)) ?? connues.find(f => f.quoi === quoi)
-      return { id: String(b.id), quoi, debut: vu?.debut ?? t, commande: String(b.command || vu?.commande || '') }
+      return { id: String(b.id), quoi, debut: vu?.debut ?? t, vu: t, commande: String(b.command || vu?.commande || '') }
     })
     .filter(b => !estVeille(b.quoi))
 }
@@ -355,8 +362,14 @@ export function nomSession(demande?: string): string {
   return texte.split(/(?<=[\p{L}\d)]{2})[.?!](?:\s|$)|\n/u)[0].trim() || 'Autre session'
 }
 
+// A shared state file, as read: too old, ignored; silent, its agents are no longer known to run
+export function lireVoisine(v: any, t: number): Voisine | null {
+  if (t - (v.maj ?? 0) >= VIEUX_MS) return null
+  return { ...v, agents: t - v.maj > PAUSE_MS ? [] : v.agents ?? [] }
+}
+
 export function etatVoisine(s: Pick<Voisine, 'maj' | 'auTravail' | 'agents'>, t: number): string {
-  return t - s.maj > PAUSE_MS ? 'en pause' : s.auTravail === false && !s.agents.length ? 'attend' : 'au travail'
+  return t - s.maj > PAUSE_MS || s.auTravail === null ? 'sans nouvelles' : s.auTravail === false && !s.agents.length ? 'attend' : 'au travail'
 }
 
 // « Claude t'attend » only for a blocking point: the other points are the person's own to-do, not a stop
@@ -408,12 +421,18 @@ export function bandeauAToi(x: { points: number; attend: boolean; reflechit: boo
   }
 }
 
+// A message that started no turn (a queued one that was withdrawn) stops holding « À toi »
+export const relitEncore = (relit: boolean, silence: number) => relit && silence < RELU_MS
+
+export const fondFrais = (f: { vu: number }, t: number) => t - f.vu < FOND_FRAIS_MS
+
 export const groupesAToi = (points: string[], bloquants: Set<string>) => [
   { nom: 'À répondre maintenant', taches: points.filter(x => bloquants.has(x)) },
   { nom: bloquants.size ? 'Quand tu peux' : `À toi · ${points.length}`, taches: points.filter(x => !bloquants.has(x)) },
 ].filter(g => g.taches.length > 0)
 
-export function etatChef(demandeFinie: boolean, points: number, taches: number): string {
+export function etatChef(demandeFinie: boolean, points: number, taches: number, connu = true): string {
+  if (!connu) return 'sans nouvelles'
   if (!demandeFinie) return 'au travail'
   if (points > 0) return ''
   return taches > 0 ? 'attend ses tâches' : 'en pause'
@@ -422,8 +441,22 @@ export function etatChef(demandeFinie: boolean, points: number, taches: number):
 export function etatAgent(a: { statut: string; fin?: number }): Etat {
   if (a.statut === 'failed') return ETATS.echec
   if (a.statut === 'killed') return ETATS.arrete
+  if (a.statut === 'perdu') return ETATS.perdu
   if (a.fin || a.statut === 'completed') return ETATS.rendu
-  return a.statut === 'waiting' ? ETATS.attend : ETATS.enCours
+  if (a.statut === 'waiting') return ETATS.attend
+  if (a.statut === 'idle') return ETATS.repos
+  return a.statut === 'pending' ? ETATS.demarre : ETATS.enCours
+}
+
+// Really at work, as the engine says: an idle teammate waits for a message
+export const travaille = (a: { statut: string; fin?: number }) => !a.fin && a.statut !== 'idle'
+
+// An agent's new state at a reading of the engine's list; `statut` undefined: it is no longer listed.
+// A message may resume an ended agent, under the same id: it is running again.
+export function relever(a: Agent, statut: string | undefined, t: number): Agent {
+  if (statut === undefined) return a.fin ? a : { ...a, statut: 'perdu', fin: t, departVu: false }
+  if (FINIS.includes(statut)) return { ...a, statut, fin: a.fin ?? t }
+  return a.fin ? { ...a, statut, fin: undefined, departVu: false, dernier: undefined, resume: undefined, pourquoi: undefined } : { ...a, statut }
 }
 
 export function etatDuPlan(etat = ''): Etat {
@@ -433,10 +466,12 @@ export function etatDuPlan(etat = ''): Etat {
   return e.startsWith('échec') ? ETATS.echecPlan : ETATS.aLancer
 }
 
-// « Agents en cours » only shows agents seen live: a running plan row with none shows nothing
-export function frontSansAgent(etat = ''): Etat | null {
-  const vu = etatDuPlan(etat)
-  return vu === ETATS.enCours ? null : vu
+// The plan is an intention: only what it says of the future or the past shows, never a present state.
+// Null: it says « en cours », which only a live agent can show. Any other word stays unsaid.
+export function selonPlan(cellule = ''): { etat: Etat; mot: string } | null {
+  if (/en cours/i.test(cellule)) return null
+  const mot = cellule.split(',').map(x => x.trim()).reverse().find(x => /^(à lancer|rendu|contrôl|échec)/i.test(x)) ?? ''
+  return { etat: etatDuPlan(mot), mot }
 }
 
 // what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
@@ -491,6 +526,11 @@ export const register: Register = on => {
   let atoiAvant: string | null = null
   let relitDepuis = 0, debutTour = 0 // a message typed during a turn waits for the next one: only the end of that turn counts it as read
   let questionLive = '' // last question asked by the session, until the answer
+  let ouverte = '' // the picker on screen right now: the session is stopped on it
+  let finTour = 0
+  // whether a turn runs is known from its start: not after a reload or a resume, until the next one
+  let tourConnu = true
+  let deduit = 0 // no turn start heard, yet an action seen: when the last one was
   let demandeFinie = true // the last request typed in this session
   // background work that is not an agent (command, server, workflow): the engine's list at each end of turn
   let fond: Fond[] = []
@@ -510,13 +550,16 @@ export const register: Register = on => {
   let parDossier = false // project found from the working folder: it takes priority
   let relancer: (() => Promise<void>) | null = null
   let ouvrirPanneau: (() => void) | null = null
-  const enCours = () => [...suivis.values()].filter(a => !a.fin)
-  const finDeTour = () => { demandeFinie = true; relit = lireApresTour(relit, debutTour, relitDepuis) }
+  const enCours = () => [...suivis.values()].filter(travaille)
+  const aToiDe = (p: Plan) => lireAToi(p.atoi, ouverte || questionLive, demandeFinie || !!ouverte, !!ouverte || (tourConnu && !enCours().length))
+  const finDeTour = (t: number) => { demandeFinie = true; ouverte = ''; tourConnu = true; deduit = 0; finTour = t; relit = lireApresTour(relit, debutTour, relitDepuis) }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'panneau-pilotage', description: 'Ouvrir le panneau Pilotage du chantier' })
     const cwd = await $.session.cwd()
     moi = (await $.session.id()).slice(0, 8)
+    // no turn yet: at rest for sure; otherwise this is a reload or a resume, maybe during a turn
+    try { tourConnu = (await $.session.turns()) === 0 } catch { tourConnu = false }
     const maison = (await $.env.get("HOME")) ?? ''
     fichierDurees = maison ? `${maison}/.claude/pilotage/durees.json` : ''
     try { durees = fichierDurees ? JSON.parse(await $.fs.read(fichierDurees)) : [] } catch { durees = [] }
@@ -556,9 +599,15 @@ export const register: Register = on => {
         rappele = false
         nommerFichiers()
         suivis.clear()
+        fils.clear()
         filSession = []
         demande = ''
         questionLive = ''
+        ouverte = ''
+        relit = false
+        atoiAvant = null
+        tourConnu = true
+        deduit = 0
         fond = []
         demandeFinie = true
         missions.clear()
@@ -567,6 +616,8 @@ export const register: Register = on => {
         if (!parDossier) { dossier = ''; plan = null }
         chercher = true
       }
+      // actions seen without a turn start: when they stop, the turn may have ended unheard
+      if (deduit && !ouverte && maintenant - deduit > FOND_FRAIS_MS) { deduit = 0; demandeFinie = true }
       if (!dossier && (chercher || tour % 6 === 0)) { chercher = false; await trouver() }
       tour++
       // kept finished agents: reread before the list, so an empty copy does not overwrite them
@@ -587,29 +638,33 @@ export const register: Register = on => {
         } catch { /* no saved brief */ }
       }
       let finiNeuf = false
-      for (const i of await $.agent.list()) {
+      const liste: { id: string; description?: string; status?: string; name?: string }[] = await $.agent.list()
+      // no longer listed: its report says it ended; without one, how it ended is unknown
+      for (const a of suivis.values()) {
+        if (!a.fin && !liste.some(i => i.id === a.id)) liste.push({ id: a.id, status: a.dernier === undefined ? undefined : 'completed' })
+      }
+      for (const i of liste) {
         const a = suivis.get(i.id)
         if (!a) {
-          const { front, type } = lireNom(i.description)
-          const lance = lances.get(i.description)
+          const description = i.description ?? ''
+          const { front, type } = lireNom(description)
+          const lance = lances.get(description)
           suivis.set(i.id, {
-            id: i.id, nom: i.description, nomCourt: i.name, front, type, statut: i.status,
+            id: i.id, nom: description, nomCourt: i.name, front, type, statut: i.status ?? 'running',
             debut: lance ?? maintenant, departVu: lance !== undefined,
-            fin: FINIS.includes(i.status) ? maintenant : undefined,
-            outils: actions.get(i.id) ?? 0, messages: 0, mission: missions.get(i.description), fil: fils.get(i.id),
+            fin: FINIS.includes(i.status ?? '') ? maintenant : undefined,
+            outils: actions.get(i.id) ?? 0, messages: 0, mission: missions.get(description), fil: fils.get(i.id),
           })
           continue
         }
-        a.statut = i.status
-        a.outils = actions.get(i.id) ?? a.outils
-        a.fil = fils.get(i.id) ?? a.fil
-        if (FINIS.includes(i.status) && !a.fin) {
-          a.fin = maintenant
+        const vu = { ...relever(a, i.status, maintenant), outils: actions.get(i.id) ?? a.outils, fil: fils.get(i.id) ?? a.fil }
+        suivis.set(i.id, vu)
+        if (vu.fin && !a.fin) {
           finiNeuf = true
           // only an agent whose start we saw; the file is reread just before (concurrent sessions)
-          if (a.departVu && fichierDurees) {
+          if (vu.departVu && fichierDurees) {
             try { durees = JSON.parse(await $.fs.read(fichierDurees)) } catch { /* keep the copy */ }
-            durees.push({ type: a.type, minutes: Math.round((a.fin - a.debut) / 6000) / 10, outils: a.outils })
+            durees.push({ type: vu.type, minutes: Math.round((vu.fin - vu.debut) / 6000) / 10, outils: vu.outils })
             try { await $.fs.write(fichierDurees, JSON.stringify(durees)) } catch { /* the history will wait */ }
           }
         }
@@ -627,14 +682,14 @@ export const register: Register = on => {
         try {
           await $.fs.write(`${partage}/.gitignore`, '*\n')
           await $.fs.write(`${partage}/${moi}.json`, JSON.stringify({
-            id: moi, maj: maintenant, demande, auTravail: !demandeFinie, quoi: filSession.at(-1)?.quoi ?? '',
+            id: moi, maj: maintenant, demande, auTravail: tourConnu || deduit ? !demandeFinie && !ouverte : null, quoi: filSession.at(-1)?.quoi ?? '',
             agents: enCours().map(a => ({ nom: a.nom, statut: a.statut, debut: a.debut })),
           }))
           for (const x of await $.fs.list(partage)) {
             if (!x.name.endsWith('.json') || x.name === `${moi}.json`) continue
             try {
-              const v = JSON.parse(await $.fs.read(`${partage}/${x.name}`))
-              if (maintenant - (v.maj ?? 0) < VIEUX_MS) autres.push({ ...v, agents: v.agents ?? [] })
+              const v = lireVoisine(JSON.parse(await $.fs.read(`${partage}/${x.name}`)), maintenant)
+              if (v) autres.push(v)
             } catch { /* being written */ }
           }
         } catch { /* shared folder unavailable: this session only */ }
@@ -666,6 +721,8 @@ export const register: Register = on => {
   // each agent's mission (its brief), the agent's actions, messages received
   on('tool.call', async ($, e, next) => {
     const x = e as any
+    // after a reload, an action shows a turn is running
+    if (!x.agentId && !tourConnu) { demandeFinie = false; deduit = await $.clock.now() }
     if (x.tool === 'Agent' && x.description) {
       missions.set(x.description, String(x.prompt ?? '').slice(0, 4000))
       lances.set(x.description, await $.clock.now())
@@ -681,20 +738,19 @@ export const register: Register = on => {
     if (!x.agentId && x.tool === 'Bash' && (x.run_in_background ?? x.input?.run_in_background)) {
       const quoi = String(x.description ?? x.input?.description ?? 'Commande')
       const quand = await $.clock.now()
-      if (!estVeille(quoi)) fond = [...fond, { id: 'b' + (x.tool_use_id ?? x.toolUseId ?? quand), quoi, debut: quand, commande: String(x.command ?? x.input?.command ?? '') }]
+      if (!estVeille(quoi)) fond = [...fond, { id: 'b' + (x.tool_use_id ?? x.toolUseId ?? quand), quoi, debut: quand, vu: quand, commande: String(x.command ?? x.input?.command ?? '') }]
       $.ui.invalidate('ui.render')
     }
-    // a question asked by the session (end-of-turn box, multiple-choice question) goes straight to « À toi »
+    // a question asked by the session goes straight to « À toi »
     if (!x.agentId) {
-      const q = /wrap_up$/.test(String(x.tool)) ? x.ask ?? x.input?.ask
-        : x.tool === 'AskUserQuestion' ? (x.questions ?? x.input?.questions)?.[0]?.question : undefined
+      const q = /wrap_up$/.test(String(x.tool)) ? x.ask ?? x.input?.ask : undefined
       if (q) { questionLive = String(q); $.ui.invalidate('ui.render') }
-      // the AskUserQuestion picker hands back control once the answer is given
-      if (q && x.tool === 'AskUserQuestion') {
-        const r = await next(e)
-        questionLive = ''
+      // the picker holds the turn until the answer: the session is stopped on the person, not thinking
+      const choix = x.tool === 'AskUserQuestion' ? (x.questions ?? x.input?.questions)?.[0]?.question : undefined
+      if (choix) {
+        ouverte = String(choix)
         $.ui.invalidate('ui.render')
-        return r
+        try { return await next(e) } finally { ouverte = ''; $.ui.invalidate('ui.render') }
       }
     }
     // visible feed: the last twelve actions, without the noise of the app's tools
@@ -719,7 +775,10 @@ export const register: Register = on => {
       const cible = [...suivis.values()].find(a => a.id === x.to || (a.nomCourt && a.nomCourt === x.to))
       if (cible) cible.messages++
     }
-    return next(e)
+    if (x.agentId) return next(e)
+    try { return await next(e) } finally {
+      if (deduit) deduit = await $.clock.now()
+    }
   })
 
   // the session's current request (the typed text), for its detail view
@@ -736,14 +795,14 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     // any session turn (typed message, notification, message from another session) puts it to work
-    if (!e.agentId) { demandeFinie = false; debutTour = await $.clock.now() }
+    if (!e.agentId) { demandeFinie = false; tourConnu = true; deduit = 0; debutTour = await $.clock.now() }
     // a notification or a system message starts with a tag: it is not a request
     if (!e.agentId && e.text && !e.text.trimStart().startsWith('<')) demande = e.text.slice(0, 300)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) finDeTour()
+    if (!e.agentId) finDeTour(await $.clock.now())
     return next(e)
   })
 
@@ -752,8 +811,14 @@ export const register: Register = on => {
     const x = e as any
     const t = await $.clock.now()
     fond = tachesDeFond(x.background_tasks ?? [], fond, t)
-    finDeTour()
+    finDeTour(t)
     $.ui.invalidate('ui.render')
+    return next(e)
+  })
+
+  // the session is over: its shared state must not keep saying it works
+  on('classic.SessionEnd', async ($, e, next) => {
+    if (dossier) { try { await $.fs.write(`${dossier}/.pilotage/${moi}.json`, JSON.stringify({ id: moi, maj: 0, agents: [] })) } catch { /* it will go silent */ } }
     return next(e)
   })
 
@@ -764,6 +829,7 @@ export const register: Register = on => {
       const tout = String(x.last_assistant_message ?? '')
       Object.assign(a, extraire(tout))
       a.dernier = tout.slice(0, 600)
+      if (a.statut === 'perdu') a.statut = 'completed'
       finisAEcrire = true
     }
     return next(e)
@@ -784,7 +850,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e) as any
     return (
       <Box flexDirection="row" alignItems="center" gap="sm">
-        <Text dimColor>{resume(plan, enCours().length, questionLive && demandeFinie ? 1 : 0)}</Text>
+        <Text dimColor>{resume(plan, enCours().length, aToiDe(plan).points.length)}</Text>
         <Button key="ouvrir" label="Ouvrir" onPress={() => afficher($)} />
       </Box>
     )
@@ -818,8 +884,11 @@ export const register: Register = on => {
     }
     const p = plan
     const miens = [...suivis.values()]
-    const { points: aToi, bloquants, arret, attend } = lireAToi(p.atoi, questionLive, demandeFinie, miens.every(x => x.fin))
+    const { points: aToi, bloquants, arret, attend } = aToiDe(p)
     ;({ relit, avant: atoiAvant } = relecture(relit, atoiAvant, JSON.stringify(p.atoi)))
+    const relu = relitEncore(relit, t - Math.max(relitDepuis, finTour))
+    const alaMain = demandeFinie || !!ouverte
+    const taches = fond.filter(f => fondFrais(f, t)).length
     // an agent belongs to one front only: exact name, then letter (« F »), then shared words
     const nomsFronts = p.fronts.map(f => f.cells[0]).filter(Boolean)
     const egal = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
@@ -871,7 +940,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="lg" padding="sm">
           {retourAccueil}
           <Text dimColor size="footnote">{choisi === 'atoi'
-            ? phraseAToi(bloquants.size, arret, relit)
+            ? phraseAToi(bloquants.size, arret, relu && !ouverte)
             : PROCHAIN}</Text>
           {vue.map(g => (
             <Box key={g.nom} flexDirection="column" gap="xs" borderStyle="round" borderDimColor padding="sm">
@@ -892,12 +961,12 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="sm" padding="sm">
           {retourAccueil}
           {avecQuestion(<Text weight="medium">{f?.cells[0] ?? 'Front'}</Text>, f?.cells[0] ?? 'ce front')}
-          <Text dimColor size="footnote">{f?.cells[3] || 'état non indiqué'}</Text>
+          <Text dimColor size="footnote">{`Selon le plan : ${f?.cells[3] || 'état non indiqué'}`}</Text>
           {titre('Fichiers')}
           <Text>{f?.cells[1] || '—'}</Text>
-          {titre('Qui s’en charge')}
+          {titre('Prévu pour')}
           <Text>{f?.cells[2] || '—'}</Text>
-          <Text dimColor size="footnote">Son agent a tourné avant l’ouverture du panneau : pas de détail gardé.</Text>
+          <Text dimColor size="footnote">Aucun agent vu par ce panneau sur ce front.</Text>
         </Box>
       )
     }
@@ -909,7 +978,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="sm" padding="sm">
           {retourAccueil}
           <Text weight="semibold">{nomSession(s?.demande)}</Text>
-          <Text dimColor size="footnote">{s ? etatVoisine(s, t) : 'terminée'}</Text>
+          <Text dimColor size="footnote">{s ? etatVoisine(s, t) : 'sans nouvelles'}</Text>
           {s?.demande && titre('Sa demande')}
           {s?.demande && <Text>{s.demande}</Text>}
           {s?.quoi && titre('Sa dernière action')}
@@ -929,8 +998,8 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="sm" padding="sm">
           {retourAccueil}
           <Text weight="medium">{nom}</Text>
-          <Text dimColor size="footnote">{x ? `${etatAgent(x).texte} · ${depuis(x.debut)} min` : 'terminé'}</Text>
-          <Text dimColor size="footnote">Il tourne dans une autre session : son détail est dans cette session.</Text>
+          <Text dimColor size="footnote">{x ? `${etatAgent(x).texte} · ${depuis(x.debut)} min` : 'sans nouvelles'}</Text>
+          {x && <Text dimColor size="footnote">Il tourne dans une autre session : son détail est dans cette session.</Text>}
         </Box>
       )
     }
@@ -973,7 +1042,7 @@ export const register: Register = on => {
                 </Box>),
             etapes(a.mission).some(aDuDetail) && <Box key="d" flexDirection="row"><Button variant="secondary" onPress={() => { etapesDetail = !etapesDetail; $.ui.invalidate('ui.render') }}>{etapesDetail ? 'Résumer' : 'Tout le détail'}</Button></Box>,
           ])}
-          {a.fin && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Pas de compte rendu.'}</Text>)}
+          {a.fin && a.statut !== 'perdu' && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Pas de compte rendu.'}</Text>)}
           {a.pourquoi && bloc('Pourquoi', <Text>{a.pourquoi}</Text>)}
           {bloc(a.fin ? 'Ses dernières actions' : 'Où il en est', fil((a.fil ?? []).slice(-3)))}
           {a.statut === 'failed' && <Button onPress={copier(a.dernier ?? a.nom)}>Copier l’erreur</Button>}
@@ -1001,9 +1070,10 @@ export const register: Register = on => {
 
     const ligneAgent = (x: Agent, complet = false) => {
       const ec = ((x.fin ?? t) - x.debut) / 60000
-      const est = x.fin ? null : estimer(x.type, ec, durees)
+      const vivant = travaille(x)
+      const est = vivant ? estimer(x.type, ec, durees) : null
       const teinte = x.statut === 'failed' ? 'error' : est?.long ? 'warning' : undefined
-      const droite = x.fin
+      const droite = !vivant
         ? etatAgent(x).texte
         : est?.long ? `long · ${Math.round(ec)} min`
         : `${Math.max(1, Math.round(ec))} min`
@@ -1015,7 +1085,7 @@ export const register: Register = on => {
       <Box flexDirection="column" padding="md" gap="xs" borderStyle="round" borderColor={accent} borderDimColor={!accent}>{enfants}</Box>
     )
 
-    const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: relit || !demandeFinie, auTravail: enCours().length + fond.length })
+    const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: !alaMain || (relu && !ouverte), auTravail: enCours().length + taches })
 
     // team sorted by state: each line is an agent (a task), or a plan front with no agent seen
     type Element = { etat: Etat['groupe']; ordre: number; el: any }
@@ -1024,14 +1094,13 @@ export const register: Register = on => {
       const vivants = miens.filter(x => frontDe(x) === f.cells[0])
       for (const x of vivants) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x) })
       if (vivants.length) continue
-      const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
-      const vu = frontSansAgent(etat)
+      const vu = selonPlan(f.cells[3])
       if (!vu) continue
-      elements.push({ etat: vu.groupe, ordre: 0,
-        el: ligne(f.cells[0], vu.point, vu.couleur, f.cells[0], etat, { onPress: voir('front:' + f.cells[0]) }) })
+      elements.push({ etat: vu.etat.groupe, ordre: 0,
+        el: ligne(f.cells[0], vu.etat.point, vu.etat.couleur, f.cells[0], vu.mot, { onPress: voir('front:' + f.cells[0]) }) })
     }
     for (const x of horsPlan) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
-    const ligneFond = (f: Fond, n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', f.quoi + (n > 1 ? ` ×${n}` : ''), `${depuis(f.debut)} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
+    const ligneFond = (f: Fond, n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', f.quoi + (n > 1 ? ` ×${n}` : ''), fondFrais(f, t) ? `${depuis(f.debut)} min` : `vue il y a ${depuis(f.vu)} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
     // card for a lead task: what it is for, since when, its command
     // the id may change at end of turn (the engine's id replaces the launch one): fall back on the name
     const [tacheId, tacheQuoi] = choisi.startsWith('tache:') ? choisi.slice(6).split('\u0000') : []
@@ -1042,10 +1111,10 @@ export const register: Register = on => {
           {retourAccueil}
           <Box flexDirection="column" gap="xs">
             {avecQuestion(<Text weight="semibold">{tache.quoi}</Text>, `la tâche ${tache.quoi}`)}
-            <Text dimColor size="footnote">Tâche du chef · depuis {duree(depuis(tache.debut))}</Text>
+            <Text dimColor size="footnote">{fondFrais(tache, t) ? `Tâche du chef · depuis ${duree(depuis(tache.debut))}` : `Tâche du chef · vue il y a ${duree(depuis(tache.vu))}`}</Text>
           </Box>
           {bloc('À quoi elle sert', <Text>{aQuoiSert(tache.quoi, tache.commande)}</Text>)}
-          <Text dimColor size="footnote">Ce n’est pas un agent : c’est le chef qui l’a lancée et qui la suit.</Text>
+          <Text dimColor size="footnote">Ce n’est pas un agent : c’est le chef qui l’a lancée.</Text>
           {tache.commande && bloc('Commande', <Text dimColor size="footnote">{uneLigne(tache.commande, 300)}</Text>)}
         </Box>
       )
@@ -1053,10 +1122,11 @@ export const register: Register = on => {
     // the lead's tasks (commands, servers): their own group, so they are not confused with agents
     const parNom = new Map<string, Fond[]>()
     for (const f of [...fond].sort((a, b) => a.debut - b.debut)) parNom.set(f.quoi, [...(parNom.get(f.quoi) ?? []), f])
-    const tachesChef = [...parNom.values()].map(l => ({ etat: 'cours' as const, ordre: l[0].debut, el: ligneFond(l[0], l.length) }))
+    const tachesChef = [...parNom.values()].map(l => ({ etat: 'cours' as const, ordre: l[0].debut, el: ligneFond(l[l.length - 1], l.length) }))
 
     const actifs = elements.filter(e => e.etat === 'cours').sort((a, b) => a.ordre - b.ordre)
     const aLancer = elements.filter(e => e.etat === 'lancer')
+    const aLArret = elements.filter(e => e.etat === 'arret')
     const faits = elements.filter(e => e.etat === 'fait').sort((a, b) => b.ordre - a.ordre)
     // without agents, what is done comes from the plan's « Fait » lines
     const lotsFaits = p.fait.map((l, k) => ({ etat: 'fait' as const, ordre: 0, el: ligne('lot' + k, ETATS.rendu.point, ETATS.rendu.couleur, l, '') }))
@@ -1088,11 +1158,11 @@ export const register: Register = on => {
     const ligne2 = [action, passe > 0 ? `${duree(passe)} passées` : ''].filter(Boolean).join(' · ')
     const groupes = sujets(p.attente)
     // the next batch takes the remaining screen space, so the overview fits without scrolling
-    const avant = [actifs.length, tachesChef.length, aLancer.length, Math.min(faitsVus.length, 3) + (faitsVus.length > 3 ? 1 : 0)]
+    const avant = [actifs.length, aLArret.length, tachesChef.length, aLancer.length, Math.min(faitsVus.length, 3) + (faitsVus.length > 3 ? 1 : 0)]
     const nSujets = sujetsVisibles({
       rangees: e.viewport?.rows,
       groupes: avant.filter(n => n > 0),
-      fil: !demandeFinie && filSession.length > 0,
+      fil: !alaMain && filSession.length > 0,
       ligne2: !!ligne2,
       autres: voisines.reduce((n, s) => n + 1 + s.agents.length, 0) + (p.sessions.length > 1 ? 1 + p.sessions.length : 0),
       sujets: groupes.length,
@@ -1125,18 +1195,19 @@ export const register: Register = on => {
 
         <Box flexDirection="column" gap="xs">
           {titre('Équipe')}
-          {ligne('ici', '◆', 'claude', 'Chef · cette session', etatChef(demandeFinie, aToi.length, fond.length), { onPress: voir('ici') })}
-          {!demandeFinie && <Box paddingLeft="lg"><Text dimColor size="footnote">{uneLigne(`↳ ${derniere && derniere.t >= debutTour ? derniere.quoi : 'réfléchit'}`, 48)}</Text></Box>}
+          {ligne('ici', '◆', 'claude', 'Chef · cette session', etatChef(alaMain, aToi.length, taches, tourConnu || !!deduit), { onPress: voir('ici') })}
+          {!alaMain && <Box paddingLeft="lg"><Text dimColor size="footnote">{uneLigne(`↳ ${derniere && derniere.t >= debutTour ? derniere.quoi : 'réfléchit'}`, 48)}</Text></Box>}
           {groupe('Agents en cours', actifs)}
+          {groupe('À l’arrêt', aLArret)}
           {groupe('Tâches du chef', tachesChef)}
           {groupe('À lancer', aLancer)}
           {groupe('Fait', faitsVus, 3)}
-          {elements.length === 0 && <Box paddingLeft="lg"><Text dimColor>Aucun agent : la session travaille seule</Text></Box>}
+          {elements.length === 0 && <Box paddingLeft="lg"><Text dimColor>Aucun agent</Text></Box>}
           {voisines.map(s => (
             <Box key={s.id} flexDirection="column">
               {ligne(s.id, '▣', 'inactive', nomSession(s.demande), etatVoisine(s, t), { onPress: voir(`session:${s.id}`) })}
               <Box flexDirection="column" paddingLeft="lg">
-                {s.agents.map(x => ligne(s.id + x.nom, ETATS.enCours.point, ETATS.enCours.couleur, x.nom.replace(PREFIXE_TYPE, '') || x.nom, `${depuis(x.debut)} min`, { onPress: voir(`autre:${s.id}:${x.nom}`) }))}
+                {s.agents.map(x => ligne(s.id + x.nom, etatAgent(x).point, etatAgent(x).couleur, x.nom.replace(PREFIXE_TYPE, '') || x.nom, `${depuis(x.debut)} min`, { onPress: voir(`autre:${s.id}:${x.nom}`) }))}
               </Box>
             </Box>
           ))}
@@ -1144,7 +1215,10 @@ export const register: Register = on => {
 
         {p.sessions.length > 1 && <Box flexDirection="column" gap="xs">
           {titre('Sessions prévues')}
-          {p.sessions.map(s => ligne(s.cells[0], etatDuPlan(s.cells[3]).point, etatDuPlan(s.cells[3]).couleur, s.cells[0], s.cells[3] ?? ''))}
+          {p.sessions.map(s => {
+            const vu = selonPlan(s.cells[3])
+            return ligne(s.cells[0], vu?.etat.point ?? '·', vu?.etat.couleur ?? 'inactive', s.cells[0], vu?.mot ?? '')
+          })}
         </Box>}
 
         {p.attente.length > 0 && <Box flexDirection="column" gap="xs">

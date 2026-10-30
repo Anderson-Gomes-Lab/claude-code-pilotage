@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, estVeille, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan, lireApresTour, frontSansAgent, tachesDeFond } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, estVeille, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan, lireApresTour, selonPlan, tachesDeFond, travaille, relever, lireVoisine, relitEncore, fondFrais } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -192,11 +192,12 @@ test('background tasks at end of turn: no agent, nothing finished, no watch; the
     { id: 'k2', type: 'x', description: 'live updates for artifact 12', status: 'running' },
     { id: 'k3', type: 'bash', description: 'Fini', status: 'completed' },
     { id: 'k4', type: 'subagent', description: 'Agent', status: 'running' },
+    { id: 'k6', type: 'monitor', description: 'Surveille', status: 'running' },
   ]
-  expect(tachesDeFond(taches, [{ id: 'b1', quoi: 'Lancer les tests', debut: 5 }], 9))
-    .toEqual([{ id: 'k1', quoi: 'Lancer les tests', debut: 5, commande: 'npm test' }])
+  expect(tachesDeFond(taches, [{ id: 'b1', quoi: 'Lancer les tests', debut: 5, vu: 5 }], 9))
+    .toEqual([{ id: 'k1', quoi: 'Lancer les tests', debut: 5, vu: 9, commande: 'npm test' }])
   expect(tachesDeFond([{ id: 'k5', type: 'bash', command: 'sleep 5', status: 'running' }], [], 9))
-    .toEqual([{ id: 'k5', quoi: 'sleep 5', debut: 9, commande: 'sleep 5' }])
+    .toEqual([{ id: 'k5', quoi: 'sleep 5', debut: 9, vu: 9, commande: 'sleep 5' }])
 })
 
 test('a watch set when a page is published is not a task', () => {
@@ -273,7 +274,7 @@ test('another session is named by what it was asked, and its state is readable',
   expect(etatVoisine({ maj: 1000, auTravail: false, agents: [] }, 2000)).toBe('attend')
   expect(etatVoisine({ maj: 1000, auTravail: false, agents: agent }, 2000)).toBe('au travail')
   expect(etatVoisine({ maj: 1000, agents: [] }, 2000)).toBe('au travail')
-  expect(etatVoisine({ maj: 0, auTravail: true, agents: [] }, 100000000)).toBe('en pause')
+  expect(etatVoisine({ maj: 0, auTravail: true, agents: [] }, 100000000)).toBe('sans nouvelles')
 })
 
 test('the model is told how to use the pane, with or without a project', () => {
@@ -284,10 +285,14 @@ test('the model is told how to use the pane, with or without a project', () => {
 })
 
 test('without a live agent, a plan row is never shown as running, whatever its Agent column says', () => {
-  expect(frontSansAgent('en cours')).toBe(null)
-  expect(frontSansAgent('à lancer')?.groupe).toBe('lancer')
-  expect(frontSansAgent('rendu')?.groupe).toBe('fait')
-  expect(frontSansAgent('échec')?.groupe).toBe('lancer')
+  expect(selonPlan('en cours')).toBe(null)
+  expect(selonPlan('lot 2, en cours')).toBe(null)
+  expect(selonPlan('à lancer')?.etat.groupe).toBe('lancer')
+  expect(selonPlan('rendu')?.etat.groupe).toBe('fait')
+  expect(selonPlan('contrôlé, relu')).toEqual({ etat: selonPlan('rendu')!.etat, mot: 'contrôlé' })
+  expect(selonPlan('échec')?.etat.groupe).toBe('lancer')
+  expect(selonPlan('au travail')?.mot).toBe('')          // a word the pane cannot back is not repeated
+  expect(selonPlan()?.etat.groupe).toBe('lancer')
 })
 
 test('Claude waits only on a blocking point', () => {
@@ -383,4 +388,74 @@ test('« À toi »: a message typed during a turn is only read at the end of the
   expect(lireApresTour(true, 100, 100)).toBe(false)
   expect(lireApresTour(true, 50, 100)).toBe(true)
   expect(lireApresTour(false, 50, 100)).toBe(false)
+})
+
+const agent = (x = {}) => ({ id: 'a', nom: 'a', front: '', type: 'autre', statut: 'running', debut: 0, departVu: true, outils: 0, messages: 0, ...x })
+
+test('live: an idle or a not-yet-started agent is not said to run', () => {
+  expect(etatAgent({ statut: 'idle' }).texte).toBe('attend un message')
+  expect(etatAgent({ statut: 'idle' }).groupe).toBe('arret')
+  expect(etatAgent({ statut: 'pending' }).texte).toBe('démarre')
+  expect(travaille({ statut: 'idle' })).toBe(false)
+  expect(travaille({ statut: 'pending' })).toBe(true)
+  expect(travaille({ statut: 'waiting' })).toBe(true)
+  expect(travaille({ statut: 'running', fin: 1 })).toBe(false)
+})
+
+test('live: an agent gone from the list without a final status is not running, nor said to be done', () => {
+  const perdu = relever(agent(), undefined, 9)
+  expect(perdu.fin).toBe(9)
+  expect(etatAgent(perdu).texte).toBe('sans nouvelles')
+  expect(etatAgent(perdu).groupe).toBe('arret')
+  expect(perdu.departVu).toBe(false) // its length is unknown: not in the history
+  const fini = agent({ statut: 'completed', fin: 3 })
+  expect(relever(fini, undefined, 9)).toEqual(fini)
+})
+
+test('live: an ended agent that gets a message runs again; its end time stays once set', () => {
+  const repris = relever(agent({ statut: 'completed', fin: 3 }), 'running', 9)
+  expect(repris.fin).toBe(undefined)
+  expect(etatAgent(repris).texte).toBe('en cours')
+  expect(repris.departVu).toBe(false)
+  expect(relever({ ...agent({ statut: 'completed', fin: 3 }), dernier: 'vieux' }, 'running', 9).dernier).toBe(undefined)
+  expect(relever(agent(), 'failed', 9).fin).toBe(9)
+  expect(relever(agent({ fin: 3 }), 'failed', 9).fin).toBe(3)
+})
+
+test('live: a silent session is not said to work, nor its agents to run', () => {
+  const v = { id: 'x', maj: 1000, auTravail: true, agents: [{ nom: 'a', statut: 'running', debut: 0 }] }
+  expect(lireVoisine(v, 2000)!.agents.length).toBe(1)
+  const silence = lireVoisine(v, 1000 + 31_000)!
+  expect(silence.agents).toEqual([])
+  expect(etatVoisine(silence, 1000 + 31_000)).toBe('sans nouvelles')
+  expect(lireVoisine(v, 1000 + 31 * 60_000)).toBe(null)
+  expect(lireVoisine({ id: 'x', maj: 0, agents: [] }, 31 * 60_000)).toBe(null) // ended session
+})
+
+test('live: a message that started no turn stops holding « À toi »', () => {
+  expect(relitEncore(true, 1000)).toBe(true)
+  expect(relitEncore(true, 31_000)).toBe(false)
+  expect(relitEncore(false, 0)).toBe(false)
+})
+
+test('live: background work is measured at end of turn; past two minutes it is a memory', () => {
+  expect(fondFrais({ vu: 0 }, 60_000)).toBe(true)
+  expect(fondFrais({ vu: 0 }, 130_000)).toBe(false)
+})
+
+test('live: a question on screen during a turn reaches « À toi » and stops the session', () => {
+  const x = lireAToi(['Valider'], 'On publie ?', true, true)
+  expect(x.points[0]).toBe('Répondre : On publie ?')
+  expect(x.attend).toBe(true)
+})
+
+test('live: unknown stays unknown after a reload', () => {
+  expect(etatChef(true, 0, 0, false)).toBe('sans nouvelles')
+  expect(etatVoisine({ maj: 1000, auTravail: null, agents: [] }, 2000)).toBe('sans nouvelles')
+})
+
+test('the band counts what the panel counts: a question merged into a plan point is not added', () => {
+  const plan = lirePlan('# Pilotage : X\n## À toi\n- Choisir la photo de la zone\n', '/x')
+  const n = lireAToi(plan.atoi, 'Quelle photo de la zone ?', true, true).points.length
+  expect(resume(plan, 0, n)).toBe('Pilotage · À toi : 1')
 })
