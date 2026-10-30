@@ -108,8 +108,9 @@ Cap : Website v1, batch 2 of 3 : project pages
 | `## Sessions` | sessions | one row per Claude session working on the project. |
 | `## Fronts` | workstreams | one workstream = its own files and a deliverable. Recognised states (`État`): `à lancer` (to start), `en cours` (running), `rendu` (delivered), `contrôlé` (reviewed). |
 | `## Fait` | done | one plain line per finished batch, with the date. |
-| `## À toi` | your turn | everything expected from you that you can do **now** (question, approval, test, screenshot), as `Topic : detail`. A leading `!` marks what blocks the rest: it comes first. |
-| `## En attente` | waiting | each line starts with its owner: a short topic (the pane groups by topic) or `Toi :` (you — the pane moves it into "À toi"). |
+| `## À toi` | your turn | what you can do **now**, nothing else (question, approval, test, screenshot), as `Topic : detail`. A leading `!` marks what blocks the rest: it comes first. Empty when there is nothing: a line wholly in parentheses is ignored. |
+| `## En attente` | waiting | each line starts with its owner: a short topic (the pane groups by topic) or `Toi :` (something for you, later; shown as "Toi, plus tard"). |
+| `Livré :` | delivered | optional line under `Cap :`, with a date: the project is finished. The pane says so under the title. |
 
 More examples in [`examples/`](examples/): small-business website, email automation, tool comparison, online course. All names in them are invented.
 
@@ -119,13 +120,12 @@ The pane is only accurate if Claude follows a few rules. Paste this into your pr
 
 ```markdown
 ## Pilotage
-- When a project starts: stop, then write `PILOTAGE.md` at the root (template: the Pilotage mod README). Show it in five lines and wait for approval.
-- One agent per workstream, only if the workstreams touch different files. An agent that delivered its batch does not get the next one: next batch = new agent.
-- Name each agent `Front · type : action` (types: recherche, construction, correction, contrôle — research, build, fix, review), reviewers included.
-- An agent's brief starts with `Mission : <one simple sentence, no paths, no jargon>`, then numbered steps (`1. …`, one short action per line), then the technical details. Its report ends with `En une phrase : …` (in one sentence) and `Pourquoi : …` (why).
-- "À toi": everything expected from me, in the same turn. Update it first when my message answers it. A check leaves "À toi" as soon as what it checks is being changed, and comes back when it is published. Two items done by the same action are one.
-- A question asked to me goes through "À toi" or the end-of-turn question, never only in the text.
-- After each batch: a neutral review, a line in "Fait", "En attente" grouped by topic.
+- When a project starts: stop, then write `PILOTAGE.md` at the root (template: the Pilotage mod README). Show it in five lines and wait for approval. Only this session writes it.
+- Route each message in one line: same workstream, other workstream (new agent), other project (another session), question (answer here).
+- One agent per workstream, only if the workstreams touch different files. An agent that delivered its batch does not get the next one.
+- Name each agent `Front · type : action` (types: recherche, construction, correction, contrôle — research, build, fix, review). Its brief starts with `Mission : <one simple sentence>`, then numbered steps, one short action each. Its report ends with `En une phrase : …` and `Pourquoi : …`.
+- "À toi" says what I can do now, nothing else. Whatever you expect from me goes in, in the same turn; whatever is no longer true comes out at once (answered, or being changed: it waits in "En attente" as `Toi : …` and comes back when ready); nothing to do means an empty section.
+- After each batch: a neutral review, a line in "Fait". When the project is delivered: a `Livré : <date>` line.
 ```
 
 What happens at each step:
@@ -135,6 +135,9 @@ What happens at each step:
 3. **Agents**: each one appears in "Agents en cours" with its mission and steps, then in "Fait" with what it delivered and why.
 4. **End of turn**: if Claude asks you something, it goes into "À toi". If it stops to wait for you, the line turns orange.
 5. **End of batch**: neutral review, "Fait" updated, next batch grouped by topic.
+6. **Delivery**: a `Livré :` line; the pane says the project is delivered.
+
+If `PILOTAGE.md` has not been written for three days or more, the pane says so under the title: what it shows may be out of date.
 
 ## Duration estimates
 

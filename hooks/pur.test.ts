@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -138,12 +138,13 @@ test('the displayed name loses its technical prefix', () => {
   expect(nomCourt('Héros · construction : refaire le haut')).toBe('Refaire le haut')
 })
 
-test('next batch sorted by topic, « Toi : » joins À toi', () => {
+test('next batch sorted by topic, « Toi : » waits there for later', () => {
   const p = lirePlan('# Pilotage : X\n## À toi\n- Valider\n## En attente\n- Toi : confirmer le prix\n- Zone : titre coupé\n- Zone: carte vide\n- Prix « à partir de » (salle de bain : 6 000 €) : à confirmer\n- Tester Safari\n', '/x')
-  expect(p.atoi).toEqual(['Valider', 'Confirmer le prix'])
+  expect(p.atoi).toEqual(['Valider'])
   expect(sujets(p.attente)).toEqual([
     { nom: 'Zone', taches: ['Titre coupé', 'Carte vide'] },
     { nom: 'À ranger', taches: ['Prix « à partir de » (salle de bain : 6 000 €) : à confirmer', 'Tester Safari'] },
+    { nom: 'Toi, plus tard', taches: ['Confirmer le prix'] },
   ])
 })
 
@@ -233,4 +234,13 @@ test('no detail to expand when the summary already says it all', () => {
 test('a note in parentheses or a « nothing » line is not an item', () => {
   const p = lirePlan('# Pilotage : X\n\n## À toi\n- (nothing waiting; rule of 30/10: no feedback = approved)\n- Rien pour le moment\n- Valider le prix (avant lundi)\n- (urgent) Rappeler (lundi)\n', '/x')
   expect(p.atoi).toEqual(['Valider le prix (avant lundi)', '(urgent) Rappeler (lundi)'])
+})
+
+test('a finished project and an old flight plan are shown under the title', () => {
+  const jour = 86400000
+  expect(lirePlan('# Pilotage : X\nLivré : 12/11/2026\n', '/x').livre).toBe('12/11/2026')
+  expect(sousTitre({ livre: '12/11/2026', maj: 0 }, 10 * jour)).toBe('Chantier livré · 12/11/2026')
+  expect(sousTitre({ livre: '', maj: 1 }, 5 * jour)).toBe('Plan de vol mis à jour il y a 4 jours')
+  expect(sousTitre({ livre: '', maj: 4 * jour }, 5 * jour)).toBe('')
+  expect(sousTitre({ livre: '' }, 5 * jour)).toBe('')
 })

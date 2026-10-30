@@ -31,6 +31,10 @@ export type Plan = {
   atoi: string[]
   attente: string[]
   fait: string[]
+  // « Livré : <date> » line: the project is finished
+  livre: string
+  // when PILOTAGE.md was last written (ms)
+  maj?: number
   erreur?: string
 }
 

@@ -275,11 +275,9 @@ export function sujetsVisibles(x: { rangees?: number; groupes: number[]; fil: bo
   return Math.max(1, place - 1) // one line kept for « + N autres »
 }
 
-const PROCHAIN = 'Pour de nouveaux agents, après ce lot.'
+const PROCHAIN = 'Pour plus tard.'
 
 // A « Toi : … » line is for the person, not for an agent
-const TOI = /^toi\s*:\s*/i
-const pourToi = (l: string) => TOI.test(l)
 
 // Next batch sorted by topic: « Sujet : tâche »; without a topic, the task goes to « À ranger »
 export function sujets(attente: string[]): { nom: string; taches: string[] }[] {
@@ -289,6 +287,7 @@ export function sujets(attente: string[]): { nom: string; taches: string[] }[] {
     const m2 = l.match(/^([^:()«»"]{1,40}?)\s*:\s+(.+)$/)?.filter((_, i) => i < 3)
     if (m2 && m2[1].trim().split(/\s+/).length > 4) m2.length = 0
     const [nom, tache] = m2?.length ? couper(`${m2[1]}\u0000${m2[2]}`, '\u0000') : ['À ranger', l]
+    if (/^toi$/i.test(nom)) { m.set('Toi, plus tard', [...(m.get('Toi, plus tard') ?? []), tache]); continue }
     m.set(nom, [...(m.get(nom) ?? []), tache || nom])
   }
   return [...m].map(([nom, taches]) => ({ nom, taches })).sort((a, b) => b.taches.length - a.taches.length)
@@ -312,10 +311,19 @@ export function lirePlan(texte: string, dossier: string): Plan {
       ?? cle('fronts').match(/\(([^)]+)\)/)?.[1]?.replace(/^./, c => c.toUpperCase()) ?? '',
     sessions: tableau(sections[cle('sessions')] ?? ''),
     fronts: tableau(sections[cle('fronts')] ?? ''),
-    atoi: [...liste(sections[cle('à toi')] ?? ''), ...attente.filter(pourToi).map(l => couper(l.replace(TOI, ''), '\u0000')[0])],
-    attente: attente.filter(l => !pourToi(l)),
+    // « À toi » = what the person can do now; « Toi : » in « En attente » is for later and stays there
+    atoi: liste(sections[cle('à toi')] ?? ''),
+    attente,
     fait: liste(sections[cle('fait')] ?? ''),
+    livre: texte.match(/^Livré\s*:\s*(.+)$/m)?.[1]?.trim() ?? '',
   }
+}
+
+// under the title: a finished project, or a flight plan nobody updated for days
+export function sousTitre(p: Pick<Plan, 'livre' | 'maj'>, t: number): string {
+  if (p.livre) return `Chantier livré · ${p.livre}`
+  const jours = p.maj ? Math.floor((t - p.maj) / 86400000) : 0
+  return jours >= 3 ? `Plan de vol mis à jour il y a ${jours} jours` : ''
 }
 
 const mediane = (v: number[]) => v[Math.floor((v.length - 1) / 2)]
@@ -488,8 +496,8 @@ export const register: Register = on => {
         try { await $.fs.write(fichierFinis, JSON.stringify(finis)) } catch { /* kept in memory only */ }
       }
       if (dossier) {
-        try { plan = lirePlan(await $.fs.read(`${dossier}/PILOTAGE.md`), dossier) }
-        catch (err) { plan = { chantier: dossier.split('/').pop() ?? '', dossier, cap: '', sessions: [], fronts: [], atoi: [], attente: [], fait: [], erreur: `PILOTAGE.md illisible : ${String(err)}` } }
+        try { plan = { ...lirePlan(await $.fs.read(`${dossier}/PILOTAGE.md`), dossier), maj: (await $.fs.stat(`${dossier}/PILOTAGE.md`)).mtimeMs } }
+        catch (err) { plan = { chantier: dossier.split('/').pop() ?? '', dossier, cap: '', sessions: [], fronts: [], atoi: [], attente: [], fait: [], livre: '', erreur: `PILOTAGE.md illisible : ${String(err)}` } }
         const partage = `${dossier}/.pilotage`
         const autres: Voisine[] = []
         try {
@@ -979,6 +987,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap="md" padding="sm">
         <Text weight="semibold" size="title">{p.chantier}</Text>
+        {sousTitre(p, t) && <Text dimColor size="footnote">{sousTitre(p, t)}</Text>}
         {p.erreur && <Text color="error">{p.erreur}</Text>}
         {p.erreur && <Button onPress={copier(p.erreur)}>Copier</Button>}
 
