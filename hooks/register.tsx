@@ -730,7 +730,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
           <Button plain onPress={voir('')}>← Retour</Button>
-          <Text weight="medium">Cette session</Text>
+          {avecQuestion(<Text weight="semibold">Chef · cette session</Text>, 'le chef (cette session)')}
           {titre(demandeFinie ? 'Dernière demande' : 'Demande en cours')}
           <Text>{demande || 'Pas encore de demande vue depuis le chargement du panneau.'}</Text>
           {titre('Ce qu’elle a fait')}
