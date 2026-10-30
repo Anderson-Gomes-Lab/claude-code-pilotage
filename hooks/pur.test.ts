@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -284,4 +284,62 @@ test('Claude waits only on a blocking point', () => {
   expect(phraseAToi(0, true, false)).toBe('Rien ne bloque : à faire quand tu peux.')
   expect(phraseAToi(1, true, false)).toBe('Claude attend ta réponse pour continuer.')
   expect(phraseAToi(0, true, true)).toBe('Claude réfléchit : ces points peuvent changer.')
+})
+
+test('« À toi »: blocking points first, marks removed', () => {
+  const x = lireAToi(['Valider', '! Choisir la photo', 'Relire'], '', true, true)
+  expect(x.points).toEqual(['Choisir la photo', 'Valider', 'Relire'])
+  expect([...x.bloquants]).toEqual(['Choisir la photo'])
+  expect(x.attend).toBe(true)
+})
+
+test('« À toi »: the end-of-turn question joins the plan point it mentions, or comes first', () => {
+  const plan = ['Valider le prix', 'Choisir la photo de la zone']
+  const meme = lireAToi(plan, 'Quelle photo de la zone choisir ?', true, true)
+  expect(meme.points).toEqual(['Choisir la photo de la zone', 'Valider le prix'])
+  expect(meme.bloquants.size).toBe(1)
+  const autre = lireAToi(plan, 'On publie ?', true, true)
+  expect(autre.points).toEqual(['Répondre : On publie ?', 'Valider le prix', 'Choisir la photo de la zone'])
+})
+
+test('« À toi »: Claude stops waiting as soon as it works again', () => {
+  const tour = lireAToi(['Valider'], 'On publie ?', false, true)
+  expect(tour.points).toEqual(['Valider'])
+  expect(tour.arret).toBe(false)
+  const agent = lireAToi(['! Valider'], '', true, false)
+  expect(agent.arret).toBe(false)
+  expect(agent.attend).toBe(false)
+})
+
+test('« À toi »: rereading ends when the list changes, not before', () => {
+  expect(relecture(false, null, 'a')).toEqual({ relit: false, avant: null })
+  const vu = relecture(true, null, 'a')
+  expect(vu).toEqual({ relit: true, avant: 'a' })
+  expect(relecture(vu.relit, vu.avant, 'a').relit).toBe(true)
+  expect(relecture(vu.relit, vu.avant, 'b').relit).toBe(false)
+})
+
+test('« À toi »: the band says who has the hand', () => {
+  const b = { points: 2, attend: false, reflechit: false, auTravail: 0 }
+  expect(bandeauAToi(b)).toEqual({ texte: '☞ À toi · 2 points', couleur: 'suggestion' })
+  expect(bandeauAToi({ ...b, points: 1, attend: true })).toEqual({ texte: '☞ À toi · 1 point · Claude t’attend', couleur: 'warning' })
+  expect(bandeauAToi({ ...b, reflechit: true })).toEqual({ texte: '⏳ Claude réfléchit · rien à faire' })
+  expect(bandeauAToi({ ...b, points: 0, auTravail: 1 })).toEqual({ texte: '⏳ Claude travaille' })
+  expect(bandeauAToi({ ...b, points: 0, reflechit: true })).toEqual({ texte: 'Rien à faire pour toi' })
+})
+
+test('« À toi »: the detail view keeps two groups only when something blocks', () => {
+  expect(groupesAToi(['A', 'B'], new Set())).toEqual([{ nom: 'À toi · 2', taches: ['A', 'B'] }])
+  expect(groupesAToi(['A', 'B'], new Set(['A']))).toEqual([
+    { nom: 'À répondre maintenant', taches: ['A'] },
+    { nom: 'Quand tu peux', taches: ['B'] },
+  ])
+  expect(groupesAToi(['A'], new Set(['A']))).toEqual([{ nom: 'À répondre maintenant', taches: ['A'] }])
+})
+
+test('the lead’s line follows the same state', () => {
+  expect(etatChef(false, 3, 0)).toBe('au travail')
+  expect(etatChef(true, 3, 2)).toBe('')
+  expect(etatChef(true, 0, 2)).toBe('attend ses tâches')
+  expect(etatChef(true, 0, 0)).toBe('en pause')
 })

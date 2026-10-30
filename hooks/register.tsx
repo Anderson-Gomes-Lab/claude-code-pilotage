@@ -344,6 +344,56 @@ export function phraseAToi(bloquants: number, arret: boolean, relit: boolean): s
   if (!bloquants) return 'Rien ne bloque : à faire quand tu peux.'
   return arret ? 'Claude attend ta réponse pour continuer.' : 'Tu peux répondre tout de suite : ton message attend son tour, Claude ne s’arrête pas.'
 }
+
+// « À toi » as shown: the plan's points and the end-of-turn question, what blocks progress first
+export function lireAToi(atoi: string[], question: string, demandeFinie: boolean, agentsFinis: boolean) {
+  const points = atoi.map(l => ({ t: l.replace(/^!\s*/, ''), bloque: /^!/.test(l) }))
+  // the end-of-turn question only counts once the turn is over: as soon as Claude works again, it no longer waits
+  if (question && demandeFinie) {
+    const meme = points.find(x => appartient({ front: '', nom: x.t }, question))
+    if (meme) meme.bloque = true
+    else points.unshift({ t: `Répondre : ${question}`, bloque: true })
+  }
+  const bloquants = new Set(points.filter(x => x.bloque).map(x => x.t))
+  // nothing is running anymore: what comes next is up to you
+  // (background tasks do not decide this: servers and watches run forever)
+  const arret = demandeFinie && agentsFinis
+  return {
+    points: [...points.filter(x => x.bloque), ...points.filter(x => !x.bloque)].map(x => x.t),
+    bloquants,
+    arret,
+    attend: attendToi(bloquants.size, arret),
+  }
+}
+
+// After a message from the person, earlier points no longer count until Claude has reread « À toi »
+// (it rewrites it, or ends its turn): `avant` is the list seen at that message
+export function relecture(relit: boolean, avant: string | null, cle: string): { relit: boolean; avant: string | null } {
+  if (!relit) return { relit, avant }
+  return avant === null ? { relit, avant: cle } : { relit: avant === cle, avant }
+}
+
+// The line at the top of the panel; with a color, it leads to the points
+export function bandeauAToi(x: { points: number; attend: boolean; reflechit: boolean; auTravail: number }): { texte: string; couleur?: string } {
+  if (!x.points) return { texte: x.auTravail > 0 ? '⏳ Claude travaille' : 'Rien à faire pour toi' }
+  if (x.reflechit) return { texte: '⏳ Claude réfléchit · rien à faire' }
+  return {
+    texte: `☞ À toi · ${x.points} point${x.points > 1 ? 's' : ''}${x.attend ? ' · Claude t’attend' : ''}`,
+    couleur: x.attend ? 'warning' : 'suggestion',
+  }
+}
+
+export const groupesAToi = (points: string[], bloquants: Set<string>) => [
+  { nom: 'À répondre maintenant', taches: points.filter(x => bloquants.has(x)) },
+  { nom: bloquants.size ? 'Quand tu peux' : `À toi · ${points.length}`, taches: points.filter(x => !bloquants.has(x)) },
+].filter(g => g.taches.length > 0)
+
+export function etatChef(demandeFinie: boolean, points: number, taches: number): string {
+  if (!demandeFinie) return 'au travail'
+  if (points > 0) return ''
+  return taches > 0 ? 'attend ses tâches' : 'en pause'
+}
+
 export const sansAgent = (cellule = '') => /^[\s—–-]*$/.test(cellule)
 
 // what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
@@ -416,6 +466,7 @@ export const register: Register = on => {
   let parDossier = false // project found from the working folder: it takes priority
   let relancer: (() => Promise<void>) | null = null
   let ouvrirPanneau: (() => void) | null = null
+  const finDeTour = () => { demandeFinie = true; if (debutTour >= relitDepuis) relit = false }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'panneau-pilotage', description: 'Ouvrir le panneau Pilotage du chantier' })
@@ -651,7 +702,7 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) { demandeFinie = true; if (debutTour >= relitDepuis) relit = false }
+    if (!e.agentId) finDeTour()
     return next(e)
   })
 
@@ -667,8 +718,7 @@ export const register: Register = on => {
         const vu = fond.find(f => f.id === String(b.id)) ?? fond.find(f => f.quoi === quoi)
         return { id: String(b.id), quoi, debut: vu?.debut ?? t, commande: String(b.command || vu?.commande || '') }
       })
-    demandeFinie = true
-    if (debutTour >= relitDepuis) relit = false
+    finDeTour()
     $.ui.invalidate('ui.render')
     return next(e)
   })
@@ -731,27 +781,9 @@ export const register: Register = on => {
       )
     }
     const p = plan
-    // what blocks progress first: the end-of-turn question, then the plan's « ! » lines
     const miens = [...suivis.values()]
-    // what blocks progress: the end-of-turn question (merged into the plan point that mentions it) and the « ! » lines
-    const pointsToi = p.atoi.map(l => ({ t: l.replace(/^!\s*/, ''), bloque: /^!/.test(l) }))
-    // the end-of-turn question only counts once the turn is over: as soon as Claude works again, it no longer waits
-    if (questionLive && demandeFinie) {
-      const meme = pointsToi.find(x => appartient({ front: '', nom: x.t }, questionLive))
-      if (meme) meme.bloque = true
-      else pointsToi.unshift({ t: `Répondre : ${questionLive}`, bloque: true })
-    }
-    const aToi = [...pointsToi.filter(x => x.bloque), ...pointsToi.filter(x => !x.bloque)].map(x => x.t)
-    // after a message from the person, earlier points no longer count until Claude has reread « À toi »
-    // (it rewrites it, or ends its turn)
-    const cleAToi = JSON.stringify(p.atoi)
-    if (relit && atoiAvant === null) atoiAvant = cleAToi
-    else if (relit && atoiAvant !== cleAToi) relit = false
-    const bloquants = new Set(pointsToi.filter(x => x.bloque).map(x => x.t))
-    // nothing is running anymore: what comes next is up to you
-    // (background tasks do not decide this: servers and watches run forever)
-    const arret = demandeFinie && miens.every(x => x.fin)
-    const attend = attendToi(bloquants.size, arret)
+    const { points: aToi, bloquants, arret, attend } = lireAToi(p.atoi, questionLive, demandeFinie, miens.every(x => x.fin))
+    ;({ relit, avant: atoiAvant } = relecture(relit, atoiAvant, JSON.stringify(p.atoi)))
     // an agent belongs to one front only: exact name, then letter (« F »), then shared words
     const nomsFronts = p.fronts.map(f => f.cells[0]).filter(Boolean)
     const egal = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
@@ -796,10 +828,7 @@ export const register: Register = on => {
       )
     })
     if (choisi === 'atoi' || choisi === 'attente' || choisi.startsWith('sujet:')) {
-      const vue = choisi === 'atoi' ? [
-          { nom: 'À répondre maintenant', taches: aToi.filter(x => bloquants.has(x)) },
-          { nom: bloquants.size ? 'Quand tu peux' : `À toi · ${aToi.length}`, taches: aToi.filter(x => !bloquants.has(x)) },
-        ].filter(g => g.taches.length > 0)
+      const vue = choisi === 'atoi' ? groupesAToi(aToi, bloquants)
         : choisi === 'attente' ? sujets(p.attente)
         : sujets(p.attente).filter(g => g.nom === choisi.slice(6))
       return (
@@ -955,8 +984,7 @@ export const register: Register = on => {
       <Box flexDirection="column" padding="md" gap="xs" borderStyle="round" borderColor={accent} borderDimColor={!accent}>{enfants}</Box>
     )
 
-    const auTravail = miens.filter(x => !x.fin).length + fond.length
-    // nothing is running anymore: what comes next is up to you
+    const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: relit || !demandeFinie, auTravail: miens.filter(x => !x.fin).length + fond.length })
 
     // team sorted by state: each line is an agent (a task), or a plan front with no agent seen
     type Element = { etat: 'cours' | 'lancer' | 'fait'; ordre: number; el: any }
@@ -1052,17 +1080,13 @@ export const register: Register = on => {
         {p.erreur && <Text color="error">{p.erreur}</Text>}
         {p.erreur && <Button onPress={copier(p.erreur)}>Copier</Button>}
 
-        {(relit || !demandeFinie) && aToi.length > 0
-          ? <Box paddingX="md" paddingY="sm" borderStyle="round" borderDimColor>
-              <Text dimColor>⏳ Claude réfléchit · rien à faire</Text>
-            </Box>
-          : aToi.length > 0
-          ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={attend ? 'warning' : 'suggestion'}>
-              <Text weight="semibold" color={attend ? 'warning' : 'suggestion'}>☞ À toi · {aToi.length} point{aToi.length > 1 ? 's' : ''}{attend ? ' · Claude t’attend' : ''}</Text>
+        {bandeau.couleur
+          ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={bandeau.couleur}>
+              <Text weight="semibold" color={bandeau.couleur}>{bandeau.texte}</Text>
               <Button plain onPress={voir('atoi')}>Voir</Button>
             </Box>
           : <Box paddingX="md" paddingY="sm" borderStyle="round" borderDimColor>
-              <Text dimColor>{auTravail > 0 ? '⏳ Claude travaille' : 'Rien à faire pour toi'}</Text>
+              <Text dimColor>{bandeau.texte}</Text>
             </Box>}
 
         {carte([
@@ -1073,7 +1097,7 @@ export const register: Register = on => {
 
         <Box flexDirection="column" gap="xs">
           {titre('Équipe')}
-          {ligne('ici', '◆', 'claude', 'Chef · cette session', !demandeFinie ? 'au travail' : aToi.length > 0 ? '' : fond.length > 0 ? 'attend ses tâches' : 'en pause', { onPress: voir('ici') })}
+          {ligne('ici', '◆', 'claude', 'Chef · cette session', etatChef(demandeFinie, aToi.length, fond.length), { onPress: voir('ici') })}
           {!demandeFinie && <Box paddingLeft="lg"><Text dimColor size="footnote">{uneLigne(`↳ ${filSession.length > 0 && filSession[filSession.length - 1].t >= debutTour ? filSession[filSession.length - 1].quoi : 'réfléchit'}`, 48)}</Text></Box>}
           {groupe('Agents en cours', enCours)}
           {groupe('Tâches du chef', tachesChef)}
