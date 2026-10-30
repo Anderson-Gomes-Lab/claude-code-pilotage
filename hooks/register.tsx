@@ -868,7 +868,7 @@ export const register: Register = on => {
     const retourAccueil = <Button key="retour" plain onPress={voir('')}>← Retour</Button>
     // « ? »: prepares a /btw question about this point in the input box, without interrupting Claude
     const question = (sujet: string) => (
-      <Button plain onPress={() => { void $.prompt.fill({ text: `/btw Question sur « ${sujet} » : ` }) }}>?</Button>
+      <Button key={`? ${sujet}`} plain onPress={() => { void $.prompt.fill({ text: `/btw Question sur « ${sujet} » : ` }) }}>?</Button>
     )
     const avecQuestion = (contenu: any, sujet: string) => (
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap="sm">{contenu}{question(sujet)}</Box>
@@ -1045,7 +1045,7 @@ export const register: Register = on => {
           {a.fin && a.statut !== 'perdu' && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Pas de compte rendu.'}</Text>)}
           {a.pourquoi && bloc('Pourquoi', <Text>{a.pourquoi}</Text>)}
           {bloc(a.fin ? 'Ses dernières actions' : 'Où il en est', fil((a.fil ?? []).slice(-3)))}
-          {a.statut === 'failed' && <Button onPress={copier(a.dernier ?? a.nom)}>Copier l’erreur</Button>}
+          {a.statut === 'failed' && <Button key="copier" onPress={copier(a.dernier ?? a.nom)}>Copier l’erreur</Button>}
           <Text dimColor size="footnote">Tout le détail : menu ⋯ › Tâches en arrière-plan</Text>
         </Box>
       )
@@ -1176,7 +1176,7 @@ export const register: Register = on => {
         <Text weight="semibold" size="title">{p.chantier}</Text>
         {sousTitre(p, t) && <Text dimColor size="footnote">{sousTitre(p, t)}</Text>}
         {p.erreur && <Text color="error">{p.erreur}</Text>}
-        {p.erreur && <Button onPress={copier(p.erreur)}>Copier</Button>}
+        {p.erreur && <Button key="copier" onPress={copier(p.erreur)}>Copier</Button>}
 
         {bandeau.couleur
           ? <Box flexDirection="row" justifyContent="space-between" alignItems="center" paddingX="md" paddingY="sm" borderStyle="round" borderColor={bandeau.couleur}>

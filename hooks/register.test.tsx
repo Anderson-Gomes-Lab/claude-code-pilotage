@@ -24,12 +24,7 @@ Cap : Maquette v6, lot 2 sur 3
 - Avis Google statiques
 `
 
-const PANE = {
-  plugin: 'pilotage',
-  component: 'Pane',
-  requestId: 'pilotage',
-  props: { title: 'Pilotage', isFocused: false, bodyColumns: 40, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
-} as const
+declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown
 
 test('startup works with a plan and a running agent', async ($, on) => {
   on('command.register', () => ({ value: { command: 'panneau-pilotage' } }))
@@ -41,7 +36,7 @@ test('startup works with a plan and a running agent', async ($, on) => {
   on('session.cwd', () => ({ value: '/Users/test/chantier' }))
   on('session.id', () => ({ value: 'abcdef1234' }))
   on('clock.now', () => ({ value: 1_000_000 }))
-  on('clock.every', () => ({ value: { cancel() {} } }))
+  on('clock.every', () => ({ value: undefined }))
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'Héros · construction : refaire', type: 'general-purpose', status: 'running' }] }))
   on('fs.read', (_, e: any) => ({ value: String(e.path).endsWith('PILOTAGE.md') ? PLAN : '[]' }))
   on('fs.write', (_, e: any) => { ecrits.push(String(e.path)); return { value: undefined } })

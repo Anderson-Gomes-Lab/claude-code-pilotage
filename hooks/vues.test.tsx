@@ -49,35 +49,50 @@ const AGENTS = [
   { id: 'a3', description: 'Veille · recherche : attend', type: 'general-purpose', status: 'idle' },
 ]
 
-type Scene = { plan?: string | null; agents?: any[]; voisine?: boolean }
+type Scene = { plan?: string | null; agents?: any[]; voisine?: boolean; statBloque?: boolean }
+
+const copies: string[] = [], remplis: string[] = []
+
+const DOSSIER = '/Users/test/chantier'
+
+// nothing sits beneath the plugin: each hook stands for the engine
+async function demarrer($: any, on: any, scene: Scene, ouverts: string[] = []) {
+  const fichiers = new Map<string, string>([['/home/test/.claude/pilotage/missions/abcdef12.json', JSON.stringify({ [AGENTS[0].description]: { mission: BRIEF, lance: 940_000 } })]])
+  if (scene.plan !== null) fichiers.set(`${DOSSIER}/PILOTAGE.md`, scene.plan ?? PLAN)
+  if (scene.voisine) fichiers.set(`${DOSSIER}/.pilotage/zzz.json`, VOISINE)
+  on('command.register', () => ({ value: { command: 'panneau-pilotage' } }))
+  on('ui.open', (_: any, e: any) => { ouverts.push(e.id); return { value: { isPlaced: true } } })
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.copy', (_: any, e: any) => { copies.push(e.text); return { value: undefined } })
+  on('prompt.fill', (_: any, e: any) => { remplis.push(e.text); return { isFilled: true } })
+  on('env.get', () => ({ value: '/home/test' }))
+  on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: DOSSIER }))
+  on('session.id', () => ({ value: 'abcdef1234' }))
+  on('session.turns', () => ({ value: 0 }))
+  on('clock.now', () => ({ value: 1_000_000 }))
+  on('clock.every', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: scene.agents ?? [] }))
+  on('tool.call', () => ({ result: {} }))
+  on('fs.read', (_: any, e: any) => {
+    const f = fichiers.get(String(e.path))
+    if (f === undefined) throw new Error('absent')
+    return { value: f }
+  })
+  on('fs.write', () => ({ value: undefined }))
+  on('fs.stat', () => {
+    if (scene.statBloque) throw new Error('illisible')
+    return { value: { mtimeMs: 999_000 } }
+  })
+  on('fs.list', (_: any, e: any) => ({ value: [...fichiers.keys()].filter(k => k.startsWith(`${e.path}/`)).map(k => ({ name: k.slice(String(e.path).length + 1) })) }))
+  await $.session.start({ cwd: DOSSIER, surface: 'desktop', isInteractive: true })
+  copies.length = remplis.length = ouverts.length = 0
+}
 
 const vue = (nom: string, scene: Scene, corps: (ui: any, textes: () => Promise<string[]>, $: any) => Promise<void>) =>
   test(nom, async ($: any, on: any) => {
     if (!$.ui.mount) return
-    const dossier = '/Users/test/chantier'
-    const fichiers = new Map<string, string>([['/home/test/.claude/pilotage/missions/abcdef12.json', JSON.stringify({ [AGENTS[0].description]: { mission: BRIEF, lance: 940_000 } })]])
-    if (scene.plan !== null) fichiers.set(`${dossier}/PILOTAGE.md`, scene.plan ?? PLAN)
-    if (scene.voisine) fichiers.set(`${dossier}/.pilotage/zzz.json`, VOISINE)
-    on('command.register', () => ({ value: { command: 'panneau-pilotage' } }))
-    on('ui.open', () => ({ value: { isPlaced: true } }))
-    on('env.get', () => ({ value: '/home/test' }))
-    on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
-    on('session.cwd', () => ({ value: dossier }))
-    on('session.id', () => ({ value: 'abcdef1234' }))
-    on('session.turns', () => ({ value: 0 }))
-    on('clock.now', () => ({ value: 1_000_000 }))
-    on('clock.every', () => ({ value: undefined }))
-    on('agent.list', () => ({ value: scene.agents ?? [] }))
-    on('tool.call', () => ({ result: {} }))
-    on('fs.read', (_: any, e: any) => {
-      const f = fichiers.get(String(e.path))
-      if (f === undefined) throw new Error('absent')
-      return { value: f }
-    })
-    on('fs.write', () => ({ value: undefined }))
-    on('fs.stat', () => ({ value: { mtimeMs: 999_000 } }))
-    on('fs.list', (_: any, e: any) => ({ value: [...fichiers.keys()].filter(k => k.startsWith(`${e.path}/`)).map(k => ({ name: k.slice(String(e.path).length + 1) })) }))
-    await $.session.start({ cwd: dossier, surface: 'desktop', isInteractive: true })
+    await demarrer($, on, scene)
     const ui = await $.ui.mount(PANE)
     await corps(ui, async () => (await ui.findAll({ type: 'Text' })).map((t: any) => t.text), $)
     await ui.unmount()
@@ -136,12 +151,34 @@ vue('agent card: mission, steps, detail on demand', { agents: AGENTS }, async (u
   expect(t).not.toContain('Remplace « 35 km » partout.')
   await ui.press({ key: 'detail' })
   expect(await textes()).toContain('Remplace « 35 km » partout.')
+  await ui.press({ key: 'detail' })
+  expect(await textes()).not.toContain('Remplace « 35 km » partout.')
+})
+
+vue('the ? button prepares a question without sending it', { agents: AGENTS }, async (ui) => {
+  await ui.press({ key: 'a1-b' })
+  await ui.press({ key: '? l\'agent Refaire le haut' })
+  expect(remplis).toEqual(['/btw Question sur « l\'agent Refaire le haut » : '])
+})
+
+vue('from Done, an agent’s back button returns to Done', { agents: AGENTS, plan: PLAN.replace('| Pied | y | — | rendu |\n', '| P1 | y | — | rendu |\n| P2 | y | — | rendu |\n| P3 | y | — | rendu |\n') }, async (ui, textes) => {
+  await ui.press({ key: 'plus-Fait-b' })
+  await ui.press({ key: 'a2-b' })
+  await ui.press({ key: 'retour' })
+  expect(await textes()).toContain('FAIT · 4')
+})
+
+vue('an unreadable plan is said in red, and can be copied', { statBloque: true }, async (ui, textes) => {
+  expect((await textes()).some(x => x.startsWith('PILOTAGE.md illisible'))).toBe(true)
+  await ui.press({ key: 'copier' })
+  expect(copies[0]).toMatch(/^PILOTAGE.md illisible/)
 })
 
 vue('a failed agent offers to copy its error', { agents: AGENTS }, async (ui, textes) => {
   await ui.press({ key: 'a2-b' })
   expect((await textes())).toContain('CE QU’IL A RENDU')
-  expect((await ui.findAll({ type: 'Button' })).some((b: any) => /Copier/.test(b.text ?? ''))).toBe(true)
+  await ui.press({ key: 'copier' })
+  expect(copies).toEqual([AGENTS[1].description])
 })
 
 vue('front card: what the plan says, nothing about an agent it never saw', {}, async (ui, textes) => {
@@ -150,6 +187,7 @@ vue('front card: what the plan says, nothing about an agent it never saw', {}, a
   expect(t).toContain('Selon le plan : à lancer')
   expect(t).toContain('PRÉVU POUR')
   expect(t).toContain('img/')
+  expect(t).toContain('Aucun agent vu par ce panneau sur ce front.')
 })
 
 vue('another session and its agent', { voisine: true }, async (ui, textes) => {
@@ -166,7 +204,9 @@ vue('another session and its agent', { voisine: true }, async (ui, textes) => {
 
 vue('a next-batch topic and the whole list', { plan: `${PLAN}- Un : a\n- Deux : b\n` }, async (ui, textes) => {
   await ui.press({ key: 'suZone-b' })
-  expect(await textes()).toContain('1. Titre coupé')
+  const sujet = await textes()
+  expect(sujet).toContain('1. Titre coupé')
+  expect(sujet).not.toContain('TOI, PLUS TARD · 1')
   await ui.press({ key: 'retour' })
   await ui.press({ key: 'su+-b' })
   const t = await textes()
@@ -195,4 +235,15 @@ vue('a lead task: its card, and a watch is not one', {}, async (ui, textes, $) =
 
 vue('a finished project says so under its title', { plan: '# Pilotage : X\nLivré : 12/11/2026\n' }, async (_, textes) => {
   expect(await textes()).toContain('Chantier livré · 12/11/2026')
+})
+
+test('the band: the essentials, and a button that opens the pane', async ($: any, on: any) => {
+  if (!$.ui.mount) return
+  const ouverts: string[] = []
+  await demarrer($, on, {}, ouverts)
+  const ui = await $.ui.mount({ plugin: 'pilotage', component: 'AbovePrompt', surface: 'desktop', props: {} })
+  expect((await ui.find({ type: 'Text' }))?.text).toBe('Pilotage · Lot 2 sur 3 · À toi : 2')
+  await ui.press({ key: 'ouvrir' })
+  expect(ouverts).toEqual(['pilotage'])
+  await ui.unmount()
 })
