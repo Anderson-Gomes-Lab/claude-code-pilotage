@@ -31,6 +31,7 @@ const PAUSE_MS = 120_000
 
 type Duree = { type: string; minutes: number; outils: number }
 
+const majuscule = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 const parent = (p: string) => p.replace(/\/[^/]+\/?$/, '') || '/'
 const segments = (p: string) => p.split('/').filter(Boolean).length
 const VIEUX_MS = 30 * 60_000 // a session silent for 30 min is no longer shown
@@ -59,8 +60,7 @@ const liste = (bloc: string) =>
 // Splits a plan sentence into two readable lines: before and after the first separator.
 export function couper(texte: string, sep: string): [string, string] {
   const i = texte.indexOf(sep)
-  const maj = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
-  return i < 0 ? [maj(texte.trim()), ''] : [maj(texte.slice(0, i).trim()), maj(texte.slice(i + sep.length).trim())]
+  return i < 0 ? [majuscule(texte.trim()), ''] : [majuscule(texte.slice(0, i).trim()), majuscule(texte.slice(i + sep.length).trim())]
 }
 
 // The band above the input box: the panel's essentials on one line.
@@ -148,9 +148,11 @@ export function appartient(agent: { front: string; nom: string }, front: string)
   return [...a].filter(m => f.has(m)).length >= 2
 }
 
+const CODE_FRONT = /^(?:[Ff]ront\s+)?([A-Z]\d{0,2})\s*[.:·)]\s/
+
 // Letter of a front: « F. Pied de page… » or « Front F : pied de page… » → « F »
 export function codeFront(x = ''): string {
-  return x.match(/^(?:[Ff]ront\s+)?([A-Z]\d{0,2})\s*[.:·)]\s/)?.[1] ?? ''
+  return x.match(CODE_FRONT)?.[1] ?? ''
 }
 
 // A list split into pieces (comma, semicolon, « + »), without splitting inside parentheses
@@ -164,18 +166,17 @@ export function morceaux(texte = ''): string[] {
     cur += c
   }
   out.push(cur)
-  return out.map(m => m.trim()).filter(Boolean).map(m => m.charAt(0).toUpperCase() + m.slice(1))
+  return out.map(m => m.trim()).filter(Boolean).map(majuscule)
 }
 
-// Steps of a brief: its numbered lines (« 1. … »), in order
 // The readable mission: the brief's « Mission : … » line, otherwise its first sentence
 export function mission(brief = ''): string {
   // one sentence only: the path, command or address that follow are for the agent
   const m = brief.match(/^\s*(?:Mission|Objectif)\s*:\s*(.+)$/im)?.[1]?.trim()
-  const t = unePhrase(sansMarques(m || brief.replace(/^\s*(?:Mission|Objectif)\s*:\s*/i, '')), 240)
-  return t.charAt(0).toUpperCase() + t.slice(1)
+  return majuscule(unePhrase(sansMarques(m || brief.replace(/^\s*(?:Mission|Objectif)\s*:\s*/i, '')), 240))
 }
 
+// Steps of a brief: its numbered lines (« 1. … »), in order
 export function etapes(brief = ''): string[] {
   const out: string[] = []
   let dans = false
@@ -208,8 +209,6 @@ function couperEtape(x = ''): { avant: string; corps: string } {
 
 // Markdown bold and code are not shown in the panel: their marks are removed
 const sansMarques = (t: string) => t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*\*/g, '').replace(/`/g, '')
-
-const majuscule = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
 // A summarized step: a short title (the theme, up to the first comma) and one line (the first sentence after it)
 export function etapeCourte(x = '', n = 80): { titre: string; ligne: string } {
@@ -269,10 +268,11 @@ export function uneLigne(texte: string, n = 48): string {
   return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '').replace(/[\s·,;:–-]+$/, '') + '…' : t
 }
 
+const PREFIXE_TYPE = /^.+?·\s*\p{L}+\s*:\s*/iu // « Front · type : »
+
 // Displayed agent name: without « Front · type : » or « Front A : », first letter capitalized
 export function nomCourt(nom: string): string {
-  const t = nom.replace(/^.+?·\s*\p{L}+\s*:\s*/iu, '').replace(/^front\s+\S+\s*:\s*/i, '').trim() || nom
-  return t.charAt(0).toUpperCase() + t.slice(1)
+  return majuscule(nom.replace(PREFIXE_TYPE, '').replace(/^front\s+\S+\s*:\s*/i, '').trim() || nom)
 }
 
 // Heights measured on a panel screenshot (units = Retina screen pixels):
@@ -289,16 +289,14 @@ export function sujetsVisibles(x: { rangees?: number; groupes: number[]; fil: bo
 
 const PROCHAIN = 'Pour plus tard.'
 
-// A « Toi : … » line is for the person, not for an agent
-
-// Next batch sorted by topic: « Sujet : tâche »; without a topic, the task goes to « À ranger »
+// Next batch sorted by topic: « Sujet : tâche »; without a topic, the task goes to « À ranger »;
+// a « Toi : … » line is for the person, not for an agent
 export function sujets(attente: string[]): { nom: string; taches: string[] }[] {
   const m = new Map<string, string[]>()
   for (const l of attente) {
     // a topic is a short name (four words at most, no parenthesis or quote); otherwise the colon is part of the sentence
-    const m2 = l.match(/^([^:()«»"]{1,40}?)\s*:\s+(.+)$/)?.filter((_, i) => i < 3)
-    if (m2 && m2[1].trim().split(/\s+/).length > 4) m2.length = 0
-    const [nom, tache] = m2?.length ? couper(`${m2[1]}\u0000${m2[2]}`, '\u0000') : ['À ranger', l]
+    const m2 = l.match(/^([^:()«»"]{1,40}?)\s*:\s+(.+)$/)
+    const [nom, tache] = m2 && m2[1].trim().split(/\s+/).length <= 4 ? [majuscule(m2[1].trim()), majuscule(m2[2].trim())] : ['À ranger', l]
     if (/^toi$/i.test(nom)) { m.set('Toi, plus tard', [...(m.get('Toi, plus tard') ?? []), tache]); continue }
     m.set(nom, [...(m.get(nom) ?? []), tache || nom])
   }
@@ -317,10 +315,10 @@ export function lirePlan(texte: string, dossier: string): Plan {
   const titre = texte.match(/^#\s+Pilotage\s*:\s*(.+)$/m)?.[1]?.trim()
   const attente = liste(sections[cle('en attente')] ?? '')
   return {
-    chantier: couper(titre ?? dossier.split('/').pop() ?? 'chantier', '\u0000')[0],
+    chantier: majuscule((titre ?? dossier.split('/').pop() ?? 'chantier').trim()),
     dossier,
     cap: texte.match(/^Cap\s*:\s*(.+)$/m)?.[1]?.trim()
-      ?? cle('fronts').match(/\(([^)]+)\)/)?.[1]?.replace(/^./, c => c.toUpperCase()) ?? '',
+      ?? majuscule(cle('fronts').match(/\(([^)]+)\)/)?.[1] ?? ''),
     sessions: tableau(sections[cle('sessions')] ?? ''),
     fronts: tableau(sections[cle('fronts')] ?? ''),
     // « À toi » = what the person can do now; « Toi : » in « En attente » is for later and stays there
@@ -384,6 +382,9 @@ export function relecture(relit: boolean, avant: string | null, cle: string): { 
   if (!relit) return { relit, avant }
   return avant === null ? { relit, avant: cle } : { relit: avant === cle, avant }
 }
+
+// At the end of a turn: a message typed during that turn waits for the next one
+export const lireApresTour = (relit: boolean, debutTour: number, relitDepuis: number) => relit && debutTour < relitDepuis
 
 // The line at the top of the panel; with a color, it leads to the points
 export function bandeauAToi(x: { points: number; attend: boolean; reflechit: boolean; auTravail: number }): { texte: string; couleur?: string } {
@@ -450,6 +451,7 @@ export function estimer(type: string, ecoule: number, durees: Duree[]) {
   return { bas, haut, long, outils: mediane(outils), fourchette: true }
 }
 
+const afficher = async ($: any) => { await $.ui.open({ id: PANE, title: 'Pilotage' }); $.ui.invalidate('ui.render') }
 const min = (ms: number) => Math.max(0, Math.round(ms / 60000))
 
 export const register: Register = on => {
@@ -492,7 +494,8 @@ export const register: Register = on => {
   let parDossier = false // project found from the working folder: it takes priority
   let relancer: (() => Promise<void>) | null = null
   let ouvrirPanneau: (() => void) | null = null
-  const finDeTour = () => { demandeFinie = true; if (debutTour >= relitDepuis) relit = false }
+  const enCours = () => [...suivis.values()].filter(a => !a.fin)
+  const finDeTour = () => { demandeFinie = true; relit = lireApresTour(relit, debutTour, relitDepuis) }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'panneau-pilotage', description: 'Ouvrir le panneau Pilotage du chantier' })
@@ -505,13 +508,14 @@ export const register: Register = on => {
     // THIS session's project: PILOTAGE.md above the working folder,
     // otherwise the one the session opened or wrote (link kept in ~/.claude/pilotage/sessions/).
     // Never another session's project: without a link, the panel says so.
-    const lien = () => maison ? `${maison}/.claude/pilotage/sessions/${moi}.txt` : ''
-    fichierLien = lien()
-    const finisDe = () => maison ? `${maison}/.claude/pilotage/finis/${moi}.json` : ''
-    fichierFinis = finisDe()
-    fichierMissions = fichierFinis.replace('/finis/', '/missions/')
+    const nommerFichiers = () => {
+      fichierLien = maison ? `${maison}/.claude/pilotage/sessions/${moi}.txt` : ''
+      fichierFinis = maison ? `${maison}/.claude/pilotage/finis/${moi}.json` : ''
+      fichierMissions = fichierFinis.replace('/finis/', '/missions/')
+    }
+    nommerFichiers()
     fichierEcran = maison ? `${maison}/.claude/pilotage/ecran.json` : ''
-    const ouvrir = () => { void $.ui.open({ id: PANE, title: 'Pilotage' }).then(() => $.ui.invalidate('ui.render')) }
+    const ouvrir = () => { void afficher($) }
     const trouver = async () => {
       const avant = dossier
       for (let d = cwd; segments(d) > 2 && !dossier; d = parent(d)) {
@@ -534,9 +538,7 @@ export const register: Register = on => {
       if (id !== moi) {
         moi = id
         rappele = false
-        fichierLien = lien()
-        fichierFinis = finisDe()
-        fichierMissions = fichierFinis.replace('/finis/', '/missions/')
+        nommerFichiers()
         suivis.clear()
         filSession = []
         demande = ''
@@ -607,13 +609,11 @@ export const register: Register = on => {
         const partage = `${dossier}/.pilotage`
         const autres: Voisine[] = []
         try {
-          {
-            await $.fs.write(`${partage}/.gitignore`, '*\n')
-            await $.fs.write(`${partage}/${moi}.json`, JSON.stringify({
-              id: moi, maj: maintenant, demande, auTravail: !demandeFinie, quoi: filSession[filSession.length - 1]?.quoi ?? '',
-              agents: [...suivis.values()].filter(a => !a.fin).map(a => ({ nom: a.nom, statut: a.statut, debut: a.debut })),
-            }))
-          }
+          await $.fs.write(`${partage}/.gitignore`, '*\n')
+          await $.fs.write(`${partage}/${moi}.json`, JSON.stringify({
+            id: moi, maj: maintenant, demande, auTravail: !demandeFinie, quoi: filSession.at(-1)?.quoi ?? '',
+            agents: enCours().map(a => ({ nom: a.nom, statut: a.statut, debut: a.debut })),
+          }))
           for (const x of await $.fs.list(partage)) {
             if (!x.name.endsWith('.json') || x.name === `${moi}.json`) continue
             try {
@@ -643,8 +643,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'panneau-pilotage' }, async $ => {
     if (!dossier) await relancer?.()
-    await $.ui.open({ id: PANE, title: 'Pilotage' })
-    $.ui.invalidate('ui.render')
+    await afficher($)
     return { text: dossier ? 'Panneau Pilotage ouvert.' : 'Panneau ouvert ; aucun chantier lié à cette session pour l’instant.' }
   })
 
@@ -774,11 +773,10 @@ export const register: Register = on => {
     const panneauVu = (await $.ui.panes()).some(x => x.id === PANE && x.isShown && x.isPlaced)
     if (panneauVu) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e) as any
-    const enCours = [...suivis.values()].filter(a => !a.fin).length
     return (
       <Box flexDirection="row" alignItems="center" gap="sm">
-        <Text dimColor>{resume(plan, enCours, questionLive && demandeFinie ? 1 : 0)}</Text>
-        <Button key="ouvrir" label="Ouvrir" onPress={async () => { await $.ui.open({ id: PANE, title: 'Pilotage' }); $.ui.invalidate('ui.render') }} />
+        <Text dimColor>{resume(plan, enCours().length, questionLive && demandeFinie ? 1 : 0)}</Text>
+        <Button key="ouvrir" label="Ouvrir" onPress={() => afficher($)} />
       </Box>
     )
   })
@@ -790,6 +788,9 @@ export const register: Register = on => {
     const voir = (id: string) => () => { retour = choisi === 'fait' && id ? 'fait' : ''; choisi = id; $.ui.invalidate('ui.render') }
     const copier = (texte: string) => () => { void $.ui.copy({ text: texte, surface: e.surface }) }
     const titre = (s: string) => <Text dimColor size="caption" weight="medium">{s.toUpperCase()}</Text>
+    const bloc = (nom: string, contenu: any) => <Box flexDirection="column" gap="xs">{titre(nom)}{contenu}</Box>
+    const depuis = (debut: number, fin = t) => Math.max(1, min(fin - debut))
+    const retourAccueil = <Button plain onPress={voir('')}>← Retour</Button>
     // « ? »: prepares a /btw question about this point in the input box, without interrupting Claude
     const question = (sujet: string) => (
       <Button plain onPress={() => { void $.prompt.fill({ text: `/btw Question sur « ${sujet} » : ` }) }}>?</Button>
@@ -824,7 +825,7 @@ export const register: Register = on => {
       : [...pas].reverse().slice(0, 12).map((x, k) => (
         <Box key={'f' + k} flexDirection="row" justifyContent="space-between" gap="sm">
           <Text>{x.quoi}</Text>
-          <Text dimColor size="footnote">{`${Math.max(1, min(t - x.t))} min`}</Text>
+          <Text dimColor size="footnote">{`${depuis(x.t)} min`}</Text>
         </Box>
       ))
 
@@ -832,7 +833,7 @@ export const register: Register = on => {
     if (choisi === 'ici') {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           {avecQuestion(<Text weight="semibold">Chef · cette session</Text>, 'le chef (cette session)')}
           {titre(demandeFinie ? 'Dernière demande' : 'Demande en cours')}
           <Text>{demande || 'Pas encore de demande vue depuis le chargement du panneau.'}</Text>
@@ -859,7 +860,7 @@ export const register: Register = on => {
         : sujets(p.attente).filter(g => g.nom === choisi.slice(6))
       return (
         <Box flexDirection="column" gap="lg" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           <Text dimColor size="footnote">{choisi === 'atoi'
             ? phraseAToi(bloquants.size, arret, relit)
             : PROCHAIN}</Text>
@@ -880,7 +881,7 @@ export const register: Register = on => {
       const f = p.fronts.find(x => x.cells[0] === choisi.slice(6))
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           {avecQuestion(<Text weight="medium">{f?.cells[0] ?? 'Front'}</Text>, f?.cells[0] ?? 'ce front')}
           <Text dimColor size="footnote">{f?.cells[3] || 'état non indiqué'}</Text>
           {titre('Fichiers')}
@@ -897,7 +898,7 @@ export const register: Register = on => {
       const s = voisines.find(v => v.id === choisi.slice(8))
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           <Text weight="semibold">{nomSession(s?.demande)}</Text>
           <Text dimColor size="footnote">{s ? etatVoisine(s, t) : 'terminée'}</Text>
           {s?.demande && titre('Sa demande')}
@@ -905,7 +906,7 @@ export const register: Register = on => {
           {s?.quoi && titre('Sa dernière action')}
           {s?.quoi && <Text>{s.quoi}</Text>}
           {!!s?.agents.length && titre(`Ses agents · ${s.agents.length}`)}
-          {s?.agents.map(x => <Text key={x.nom}>{nomCourt(x.nom)} · {Math.max(1, min(t - x.debut))} min</Text>)}
+          {s?.agents.map(x => <Text key={x.nom}>{nomCourt(x.nom)} · {depuis(x.debut)} min</Text>)}
         </Box>
       )
     }
@@ -917,9 +918,9 @@ export const register: Register = on => {
       const x = voisines.find(v => v.id === id)?.agents.find(y => y.nom === nom)
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           <Text weight="medium">{nom}</Text>
-          <Text dimColor size="footnote">{x ? `${etatAgent(x).texte} · ${Math.max(1, min(t - x.debut))} min` : 'terminé'}</Text>
+          <Text dimColor size="footnote">{x ? `${etatAgent(x).texte} · ${depuis(x.debut)} min` : 'terminé'}</Text>
           <Text dimColor size="footnote">Il tourne dans une autre session : son détail est dans cette session.</Text>
         </Box>
       )
@@ -929,15 +930,14 @@ export const register: Register = on => {
     const a = suivis.get(choisi)
     if (a) {
       const front = p.fronts.find(f => f.cells[0] === frontDe(a))
-      const bloc = (nom: string, contenu: any) => <Box flexDirection="column" gap="xs">{titre(nom)}{contenu}</Box>
       return (
         <Box flexDirection="column" gap="lg" padding="sm">
           <Button plain onPress={voir(retour)}>← Retour</Button>
           <Box flexDirection="column" gap="xs">
             {avecQuestion(<Text weight="semibold">{nomCourt(a.nom)}</Text>, `l'agent ${nomCourt(a.nom)}`)}
-            <Text dimColor size="footnote">{[codeAgent(a) ? `Agent ${codeAgent(a)}` : '', etatAgent(a).texte, `${Math.max(1, min((a.fin ?? t) - a.debut))} min`, a.outils ? `${a.outils} action${a.outils > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</Text>
+            <Text dimColor size="footnote">{[codeAgent(a) ? `Agent ${codeAgent(a)}` : '', etatAgent(a).texte, `${depuis(a.debut, a.fin)} min`, a.outils ? `${a.outils} action${a.outils > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</Text>
           </Box>
-          {front && bloc('En charge de', morceaux(front.cells[0].replace(/^(?:[Ff]ront\s+)?[A-Z]\d{0,2}\s*[.:·)]\s+/, '')).map((m, k) => <Text key={k}>• {m}</Text>))}
+          {front && bloc('En charge de', morceaux(front.cells[0].replace(CODE_FRONT, '')).map((m, k) => <Text key={k}>• {m}</Text>))}
           {front?.cells[1] && bloc('Fichiers', morceaux(front.cells[1]).map((m, k) => <Text key={k} dimColor>• {m}</Text>))}
           {bloc('Sa mission', <Text>{mission(a.mission) || 'Brief non capté (agent lancé avant cette version du panneau).'}</Text>)}
           {etapes(a.mission).length > 0 && bloc('Ses étapes', [
@@ -973,11 +973,7 @@ export const register: Register = on => {
       )
     }
 
-    // agents sorted by plan front; a finished agent stays visible for fifteen minutes
-    // all the session's agents: the Done group shows only three
-    const visibles = miens
-    const horsPlan = visibles.filter(x => !frontDe(x))
-
+    const horsPlan = miens.filter(x => !frontDe(x))
 
     // one line: dot and name on the left, time on the right
     const ligne = (cle: string, point: string, couleur: string, nom: string, droite: string, opts: { onPress?: () => void; teinte?: string; charge?: boolean } = {}) => {
@@ -1010,38 +1006,35 @@ export const register: Register = on => {
       <Box flexDirection="column" padding="md" gap="xs" borderStyle="round" borderColor={accent} borderDimColor={!accent}>{enfants}</Box>
     )
 
-    const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: relit || !demandeFinie, auTravail: miens.filter(x => !x.fin).length + fond.length })
+    const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: relit || !demandeFinie, auTravail: enCours().length + fond.length })
 
     // team sorted by state: each line is an agent (a task), or a plan front with no agent seen
     type Element = { etat: Etat['groupe']; ordre: number; el: any }
     const elements: Element[] = []
     for (const f of p.fronts) {
-      const vivants = visibles.filter(x => frontDe(x) === f.cells[0])
+      const vivants = miens.filter(x => frontDe(x) === f.cells[0])
       for (const x of vivants) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x) })
       if (vivants.length) continue
       const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
-      const e = etatDuPlan(etat)
+      const vu = etatDuPlan(etat)
       // a running front without an agent is the session itself: the chef's line already says so
-      if (e === ETATS.enCours && sansAgent(f.cells[2])) continue
-      // finished front: the plan line leads to the last agent that held it
-      const dernierAgent = miens.filter(x => frontDe(x) === f.cells[0]).sort((x, y) => y.debut - x.debut)[0]
-      elements.push({ etat: e.groupe, ordre: 0,
-        el: ligne(f.cells[0], e.point, e.couleur, f.cells[0], etat, { onPress: voir(dernierAgent ? dernierAgent.id : 'front:' + f.cells[0]) }) })
+      if (vu === ETATS.enCours && sansAgent(f.cells[2])) continue
+      elements.push({ etat: vu.groupe, ordre: 0,
+        el: ligne(f.cells[0], vu.point, vu.couleur, f.cells[0], etat, { onPress: voir('front:' + f.cells[0]) }) })
     }
     for (const x of horsPlan) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
-    const ligneFond = (f: typeof fond[number], n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', nomTache(f.quoi) + (n > 1 ? ` ×${n}` : ''), `${Math.max(1, min(t - f.debut))} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
+    const ligneFond = (f: typeof fond[number], n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', nomTache(f.quoi) + (n > 1 ? ` ×${n}` : ''), `${depuis(f.debut)} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
     // card for a lead task: what it is for, since when, its command
     // the id may change at end of turn (the engine's id replaces the launch one): fall back on the name
     const [tacheId, tacheQuoi] = choisi.startsWith('tache:') ? choisi.slice(6).split('\u0000') : []
     const tache = tacheId ? fond.find(f => f.id === tacheId) ?? fond.find(f => f.quoi === tacheQuoi) : undefined
     if (tache) {
-      const bloc = (nom: string, contenu: any) => <Box flexDirection="column" gap="xs">{titre(nom)}{contenu}</Box>
       return (
         <Box flexDirection="column" gap="lg" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           <Box flexDirection="column" gap="xs">
             {avecQuestion(<Text weight="semibold">{nomTache(tache.quoi)}</Text>, `la tâche ${nomTache(tache.quoi)}`)}
-            <Text dimColor size="footnote">Tâche du chef · depuis {duree(Math.max(1, min(t - tache.debut)))}</Text>
+            <Text dimColor size="footnote">Tâche du chef · depuis {duree(depuis(tache.debut))}</Text>
           </Box>
           {bloc('À quoi elle sert', <Text>{aQuoiSert(tache.quoi, tache.commande)}</Text>)}
           <Text dimColor size="footnote">Ce n’est pas un agent : c’est le chef qui l’a lancée et qui la suit.</Text>
@@ -1054,11 +1047,11 @@ export const register: Register = on => {
     for (const f of [...fond].sort((a, b) => a.debut - b.debut)) parNom.set(nomTache(f.quoi), [...(parNom.get(nomTache(f.quoi)) ?? []), f])
     const tachesChef = [...parNom.values()].map(l => ({ etat: 'cours' as const, ordre: l[0].debut, el: ligneFond(l[0], l.length) }))
 
-    const enCours = elements.filter(e => e.etat === 'cours').sort((a, b) => a.ordre - b.ordre)
+    const actifs = elements.filter(e => e.etat === 'cours').sort((a, b) => a.ordre - b.ordre)
     const aLancer = elements.filter(e => e.etat === 'lancer')
     const faits = elements.filter(e => e.etat === 'fait').sort((a, b) => b.ordre - a.ordre)
     // without agents, what is done comes from the plan's « Fait » lines
-    const lotsFaits = p.fait.map((l, k) => ({ etat: 'fait' as const, ordre: 0, el: ligne('lot' + k, '✓', 'success', l, '') }))
+    const lotsFaits = p.fait.map((l, k) => ({ etat: 'fait' as const, ordre: 0, el: ligne('lot' + k, ETATS.rendu.point, ETATS.rendu.couleur, l, '') }))
     const faitsVus = faits.length ? faits : lotsFaits
     const groupe = (nom: string, liste: Element[], max = 99) => liste.length > 0 && (
       <Box flexDirection="column" paddingLeft="lg" paddingTop="xs">
@@ -1072,7 +1065,7 @@ export const register: Register = on => {
     if (choisi === 'fait') {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
-          <Button plain onPress={voir('')}>← Retour</Button>
+          {retourAccueil}
           {titre(`Fait · ${faitsVus.length}`)}
           {faitsVus.map(e => e.el)}
           {faits.length > 0 && p.fait.length > 0 && titre(`Lots · ${p.fait.length}`)}
@@ -1081,12 +1074,13 @@ export const register: Register = on => {
       )
     }
 
+    const derniere = filSession.at(-1)
     const [livrable, etape] = couper(p.cap, ', ')
     const [numero, action] = couper(etape, ' : ')
     const ligne2 = [action, passe > 0 ? `${duree(passe)} passées` : ''].filter(Boolean).join(' · ')
     const groupes = sujets(p.attente)
     // the next batch takes the remaining screen space, so the overview fits without scrolling
-    const avant = [enCours.length, tachesChef.length, aLancer.length, Math.min(faitsVus.length, 3) + (faitsVus.length > 3 ? 1 : 0)]
+    const avant = [actifs.length, tachesChef.length, aLancer.length, Math.min(faitsVus.length, 3) + (faitsVus.length > 3 ? 1 : 0)]
     const nSujets = sujetsVisibles({
       rangees: e.viewport?.rows,
       groupes: avant.filter(n => n > 0),
@@ -1124,8 +1118,8 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="xs">
           {titre('Équipe')}
           {ligne('ici', '◆', 'claude', 'Chef · cette session', etatChef(demandeFinie, aToi.length, fond.length), { onPress: voir('ici') })}
-          {!demandeFinie && <Box paddingLeft="lg"><Text dimColor size="footnote">{uneLigne(`↳ ${filSession.length > 0 && filSession[filSession.length - 1].t >= debutTour ? filSession[filSession.length - 1].quoi : 'réfléchit'}`, 48)}</Text></Box>}
-          {groupe('Agents en cours', enCours)}
+          {!demandeFinie && <Box paddingLeft="lg"><Text dimColor size="footnote">{uneLigne(`↳ ${derniere && derniere.t >= debutTour ? derniere.quoi : 'réfléchit'}`, 48)}</Text></Box>}
+          {groupe('Agents en cours', actifs)}
           {groupe('Tâches du chef', tachesChef)}
           {groupe('À lancer', aLancer)}
           {groupe('Fait', faitsVus, 3)}
@@ -1134,7 +1128,7 @@ export const register: Register = on => {
             <Box key={s.id} flexDirection="column">
               {ligne(s.id, '▣', 'inactive', nomSession(s.demande), etatVoisine(s, t), { onPress: voir(`session:${s.id}`) })}
               <Box flexDirection="column" paddingLeft="lg">
-                {s.agents.map(x => ligne(s.id + x.nom, '●', 'suggestion', x.nom.replace(/^.+?·\s*\p{L}+\s*:\s*/iu, '') || x.nom, `${Math.max(1, min(t - x.debut))} min`, { onPress: voir(`autre:${s.id}:${x.nom}`) }))}
+                {s.agents.map(x => ligne(s.id + x.nom, ETATS.enCours.point, ETATS.enCours.couleur, x.nom.replace(PREFIXE_TYPE, '') || x.nom, `${depuis(x.debut)} min`, { onPress: voir(`autre:${s.id}:${x.nom}`) }))}
               </Box>
             </Box>
           ))}

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan, lireApresTour } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -363,4 +363,11 @@ test('one table of states: plan words', () => {
   expect(vu('échec')).toEqual(['○', 'error', 'cours'])
   expect(vu('à lancer')).toEqual(['○', 'inactive', 'lancer'])
   expect(vu()).toEqual(['○', 'inactive', 'lancer'])
+})
+
+test('« À toi »: a message typed during a turn is only read at the end of the next one', () => {
+  expect(lireApresTour(true, 100, 50)).toBe(false)
+  expect(lireApresTour(true, 100, 100)).toBe(false)
+  expect(lireApresTour(true, 50, 100)).toBe(true)
+  expect(lireApresTour(false, 50, 100)).toBe(false)
 })
