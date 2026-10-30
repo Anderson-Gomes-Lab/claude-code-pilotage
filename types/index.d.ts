@@ -42,4 +42,8 @@ export type Voisine = {
   id: string
   maj: number
   agents: { nom: string; statut: string; debut: number }[]
+  // what this session is doing, for the other sessions of the project
+  demande?: string
+  auTravail?: boolean
+  quoi?: string
 }

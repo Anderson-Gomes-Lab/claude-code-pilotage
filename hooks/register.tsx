@@ -326,6 +326,17 @@ export function sousTitre(p: Pick<Plan, 'livre' | 'maj'>, t: number): string {
   return jours >= 3 ? `Plan de vol mis à jour il y a ${jours} jours` : ''
 }
 
+// another session's name: the first sentence of what it was asked
+export function nomSession(demande?: string): string {
+  const texte = (demande ?? '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^\d+[.)]\s+/, '')
+  // a sentence ends on a mark followed by a space, not inside « v0.24 », « site.js » or « M. Durand »
+  return texte.split(/(?<=[\p{L}\d)]{2})[.?!](?:\s|$)|\n/u)[0].trim() || 'Autre session'
+}
+
+export function etatVoisine(s: Pick<Voisine, 'maj' | 'auTravail' | 'agents'>, t: number): string {
+  return t - s.maj > PAUSE_MS ? 'en pause' : s.auTravail === false && !s.agents.length ? 'attend' : 'au travail'
+}
+
 const mediane = (v: number[]) => v[Math.floor((v.length - 1) / 2)]
 const centile80 = (v: number[]) => v[Math.floor(0.8 * (v.length - 1))]
 
@@ -504,7 +515,7 @@ export const register: Register = on => {
           {
             await $.fs.write(`${partage}/.gitignore`, '*\n')
             await $.fs.write(`${partage}/${moi}.json`, JSON.stringify({
-              id: moi, maj: maintenant,
+              id: moi, maj: maintenant, demande, auTravail: !demandeFinie, quoi: filSession[filSession.length - 1]?.quoi ?? '',
               agents: [...suivis.values()].filter(a => !a.fin).map(a => ({ nom: a.nom, statut: a.statut, debut: a.debut })),
             }))
           }
@@ -611,7 +622,8 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     // any session turn (typed message, notification, message from another session) puts it to work
     if (!e.agentId) { demandeFinie = false; debutTour = await $.clock.now() }
-    if (!e.agentId && e.text) demande = e.text.slice(0, 300)
+    // a notification or a system message starts with a tag: it is not a request
+    if (!e.agentId && e.text && !e.text.trimStart().startsWith('<')) demande = e.text.slice(0, 300)
     return next(e)
   })
 
@@ -797,6 +809,24 @@ export const register: Register = on => {
           {titre('Qui s’en charge')}
           <Text>{f?.cells[2] || '—'}</Text>
           <Text dimColor size="footnote">Son agent a tourné avant l’ouverture du panneau : pas de détail gardé.</Text>
+        </Box>
+      )
+    }
+
+    // another session of the project: what it shares, not more
+    if (choisi.startsWith('session:')) {
+      const s = voisines.find(v => v.id === choisi.slice(8))
+      return (
+        <Box flexDirection="column" gap="sm" padding="sm">
+          <Button plain onPress={voir('')}>← Retour</Button>
+          <Text weight="semibold">{nomSession(s?.demande)}</Text>
+          <Text dimColor size="footnote">{s ? etatVoisine(s, t) : 'terminée'}</Text>
+          {s?.demande && titre('Sa demande')}
+          {s?.demande && <Text>{s.demande}</Text>}
+          {s?.quoi && titre('Sa dernière action')}
+          {s?.quoi && <Text>{s.quoi}</Text>}
+          {!!s?.agents.length && titre(`Ses agents · ${s.agents.length}`)}
+          {s?.agents.map(x => <Text key={x.nom}>{nomCourt(x.nom)} · {Math.max(1, min(t - x.debut))} min</Text>)}
         </Box>
       )
     }
@@ -1021,7 +1051,7 @@ export const register: Register = on => {
           {elements.length === 0 && <Box paddingLeft="lg"><Text dimColor>Aucun agent : la session travaille seule</Text></Box>}
           {voisines.map(s => (
             <Box key={s.id} flexDirection="column">
-              {ligne(s.id, '▣', 'inactive', `Session ${s.id}`, t - s.maj > PAUSE_MS ? 'en pause' : 'active')}
+              {ligne(s.id, '▣', 'inactive', nomSession(s.demande), etatVoisine(s, t), { onPress: voir(`session:${s.id}`) })}
               <Box flexDirection="column" paddingLeft="lg">
                 {s.agents.map(x => ligne(s.id + x.nom, '●', 'suggestion', x.nom.replace(/^.+?·\s*\p{L}+\s*:\s*/iu, '') || x.nom, `${Math.max(1, min(t - x.debut))} min`, { onPress: voir(`autre:${s.id}:${x.nom}`) }))}
               </Box>

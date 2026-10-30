@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -243,4 +243,22 @@ test('a finished project and an old flight plan are shown under the title', () =
   expect(sousTitre({ livre: '', maj: 1 }, 5 * jour)).toBe('Plan de vol mis à jour il y a 4 jours')
   expect(sousTitre({ livre: '', maj: 4 * jour }, 5 * jour)).toBe('')
   expect(sousTitre({ livre: '' }, 5 * jour)).toBe('')
+})
+
+test('another session is named by what it was asked, and its state is readable', () => {
+  expect(nomSession('Refaire le pied de page. Et le chat.')).toBe('Refaire le pied de page')
+  expect(nomSession('1. Relire le diff\n2. Lancer')).toBe('Relire le diff')
+  expect(nomSession('Passe en v0.24.0 le mod')).toBe('Passe en v0.24.0 le mod')
+  expect(nomSession('Corrige site.js puis relance')).toBe('Corrige site.js puis relance')
+  expect(nomSession('Vois avec M. Durand le devis')).toBe('Vois avec M. Durand le devis')
+  expect(nomSession('\nRefaire le pied')).toBe('Refaire le pied')
+  expect(nomSession('...suite')).toBe('suite')
+  expect(nomSession('')).toBe('Autre session')
+  expect(nomSession()).toBe('Autre session')
+  const agent = [{ nom: 'a', statut: 'running', debut: 0 }]
+  expect(etatVoisine({ maj: 1000, auTravail: true, agents: [] }, 2000)).toBe('au travail')
+  expect(etatVoisine({ maj: 1000, auTravail: false, agents: [] }, 2000)).toBe('attend')
+  expect(etatVoisine({ maj: 1000, auTravail: false, agents: agent }, 2000)).toBe('au travail')
+  expect(etatVoisine({ maj: 1000, agents: [] }, 2000)).toBe('au travail')
+  expect(etatVoisine({ maj: 0, auTravail: true, agents: [] }, 100000000)).toBe('en pause')
 })

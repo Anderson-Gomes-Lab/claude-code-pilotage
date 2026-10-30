@@ -30,6 +30,7 @@ The overview fits on one screen; details open on click.
 | **Objectif** (goal) | the deliverable and the stage, the current action, the time spent. |
 | **Équipe** (team) | the **chef** (the session itself) and its state; while it works, `↳` says what it is doing. Then **Agents en cours** (running agents), **Tâches du chef** (⚙ commands, servers, watchers started in the background — not agents), **À lancer** (to start), **Fait** (done). |
 | **Prochain lot** (next batch) | upcoming work grouped by subject, as many subjects as the screen holds, the rest as "+ N autres". |
+| **Other sessions** | sessions on the same project, named by their current request. A click shows what each one is doing. |
 | **?** | next to an agent, a task, a subject or an item: fills `/btw Question sur « … » :` in the prompt box, to ask a question without interrupting Claude. |
 
 On click:
@@ -171,7 +172,7 @@ The pane opens by itself as soon as the session has a `PILOTAGE.md`. Otherwise: 
 - `~/.claude/pilotage/sessions/<id>.txt`: the project linked to each session.
 - `~/.claude/pilotage/missions/<id>.json` and `finis/<id>.json`: agent briefs and reports, to show them again after a reload.
 - `~/.claude/pilotage/ecran.json`: the pane height, to fit the overview on screen.
-- `<project>/.pilotage/<id>.json`: each session's running agents, for other sessions on the same project. A `.gitignore` is created there.
+- `<project>/.pilotage/<id>.json`: each session's request, last action and running agents, for other sessions on the same project. A `.gitignore` is created there.
 
 Nothing leaves your machine.
 
