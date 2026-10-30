@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -342,4 +342,25 @@ test('the lead’s line follows the same state', () => {
   expect(etatChef(true, 3, 2)).toBe('')
   expect(etatChef(true, 0, 2)).toBe('attend ses tâches')
   expect(etatChef(true, 0, 0)).toBe('en pause')
+})
+
+test('one table of states: agents', () => {
+  const vu = (statut: string, fin?: number) => { const e = etatAgent({ statut, fin }); return [e.texte, e.point, e.couleur, e.groupe] }
+  expect(vu('running')).toEqual(['en cours', '●', 'suggestion', 'cours'])
+  expect(vu('waiting')).toEqual(['attend', '●', 'warning', 'cours'])
+  expect(vu('completed', 1)).toEqual(['rendu', '✓', 'success', 'fait'])
+  expect(vu('failed', 1)).toEqual(['échec', '✗', 'error', 'fait'])
+  expect(vu('killed', 1)).toEqual(['arrêté', '✗', 'error', 'fait'])
+  expect(vu('running', 1)[0]).toBe('rendu')          // a finished agent that got a new message stays finished
+  expect(etatAgent({ statut: 'completed' }).texte).toBe('rendu') // another session's agent has no end time
+})
+
+test('one table of states: plan words', () => {
+  const vu = (x?: string) => { const e = etatDuPlan(x); return [e.point, e.couleur, e.groupe] }
+  expect(vu('Rendu')).toEqual(['✓', 'success', 'fait'])
+  expect(vu('contrôlé')).toEqual(['✓', 'success', 'fait'])
+  expect(vu('en cours')).toEqual(['●', 'suggestion', 'cours'])
+  expect(vu('échec')).toEqual(['○', 'error', 'cours'])
+  expect(vu('à lancer')).toEqual(['○', 'inactive', 'lancer'])
+  expect(vu()).toEqual(['○', 'inactive', 'lancer'])
 })

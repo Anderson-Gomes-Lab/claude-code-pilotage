@@ -15,6 +15,18 @@ const MOTS: [string, string][] = [
   ['construi', 'construction'], ['lot ', 'construction'], ['rythme', 'construction'],
 ]
 const FINIS = ['completed', 'failed', 'killed']
+// Every state the panel shows: its word, its dot, its color, and the Team group it falls in
+type Etat = { texte: string; point: string; couleur: string; groupe: 'cours' | 'lancer' | 'fait' }
+const ETATS: Record<string, Etat> = {
+  enCours: { texte: 'en cours', point: '●', couleur: 'suggestion', groupe: 'cours' },
+  attend: { texte: 'attend', point: '●', couleur: 'warning', groupe: 'cours' },
+  rendu: { texte: 'rendu', point: '✓', couleur: 'success', groupe: 'fait' },
+  echec: { texte: 'échec', point: '✗', couleur: 'error', groupe: 'fait' },
+  arrete: { texte: 'arrêté', point: '✗', couleur: 'error', groupe: 'fait' },
+  // a plan line in failure still needs someone, unlike an agent that ended
+  echecPlan: { texte: 'échec', point: '○', couleur: 'error', groupe: 'cours' },
+  aLancer: { texte: 'à lancer', point: '○', couleur: 'inactive', groupe: 'lancer' },
+}
 const PAUSE_MS = 120_000
 
 type Duree = { type: string; minutes: number; outils: number }
@@ -394,6 +406,20 @@ export function etatChef(demandeFinie: boolean, points: number, taches: number):
   return taches > 0 ? 'attend ses tâches' : 'en pause'
 }
 
+export function etatAgent(a: { statut: string; fin?: number }): Etat {
+  if (a.statut === 'failed') return ETATS.echec
+  if (a.statut === 'killed') return ETATS.arrete
+  if (a.fin || a.statut === 'completed') return ETATS.rendu
+  return a.statut === 'waiting' ? ETATS.attend : ETATS.enCours
+}
+
+export function etatDuPlan(etat = ''): Etat {
+  const e = etat.toLowerCase()
+  if (e.startsWith('contrôl') || e.startsWith('rendu')) return ETATS.rendu
+  if (e.startsWith('en cours')) return ETATS.enCours
+  return e.startsWith('échec') ? ETATS.echecPlan : ETATS.aLancer
+}
+
 export const sansAgent = (cellule = '') => /^[\s—–-]*$/.test(cellule)
 
 // what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
@@ -711,7 +737,7 @@ export const register: Register = on => {
     const x = e as any
     const t = await $.clock.now()
     fond = ((x.background_tasks ?? []) as any[])
-      .filter(b => b.type !== 'subagent' && !/^(completed|failed|killed)$/.test(String(b.status)))
+      .filter(b => b.type !== 'subagent' && !FINIS.includes(String(b.status)))
       .map(b => {
         const quoi = String(b.description || b.command || b.type).split('\n')[0]
         // the start seen at launch is kept (same id, or same description)
@@ -893,7 +919,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="sm" padding="sm">
           <Button plain onPress={voir('')}>← Retour</Button>
           <Text weight="medium">{nom}</Text>
-          <Text dimColor size="footnote">{x ? `${statutVoisin(x.statut)} · ${Math.max(1, min(t - x.debut))} min` : 'terminé'}</Text>
+          <Text dimColor size="footnote">{x ? `${etatAgent(x).texte} · ${Math.max(1, min(t - x.debut))} min` : 'terminé'}</Text>
           <Text dimColor size="footnote">Il tourne dans une autre session : son détail est dans cette session.</Text>
         </Box>
       )
@@ -909,7 +935,7 @@ export const register: Register = on => {
           <Button plain onPress={voir(retour)}>← Retour</Button>
           <Box flexDirection="column" gap="xs">
             {avecQuestion(<Text weight="semibold">{nomCourt(a.nom)}</Text>, `l'agent ${nomCourt(a.nom)}`)}
-            <Text dimColor size="footnote">{[codeAgent(a) ? `Agent ${codeAgent(a)}` : '', statutTexte(a), `${Math.max(1, min((a.fin ?? t) - a.debut))} min`, a.outils ? `${a.outils} action${a.outils > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</Text>
+            <Text dimColor size="footnote">{[codeAgent(a) ? `Agent ${codeAgent(a)}` : '', etatAgent(a).texte, `${Math.max(1, min((a.fin ?? t) - a.debut))} min`, a.outils ? `${a.outils} action${a.outils > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</Text>
           </Box>
           {front && bloc('En charge de', morceaux(front.cells[0].replace(/^(?:[Ff]ront\s+)?[A-Z]\d{0,2}\s*[.:·)]\s+/, '')).map((m, k) => <Text key={k}>• {m}</Text>))}
           {front?.cells[1] && bloc('Fichiers', morceaux(front.cells[1]).map((m, k) => <Text key={k} dimColor>• {m}</Text>))}
@@ -973,11 +999,11 @@ export const register: Register = on => {
       const est = x.fin ? null : estimer(x.type, ec, durees)
       const teinte = x.statut === 'failed' ? 'error' : est?.long ? 'warning' : undefined
       const droite = x.fin
-        ? statutTexte(x)
+        ? etatAgent(x).texte
         : est?.long ? `long · ${Math.round(ec)} min`
         : `${Math.max(1, Math.round(ec))} min`
       const action = nomCourt(x.front ? x.nom.replace(new RegExp('^' + x.front.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:\\s*', 'i'), '') : x.nom)
-      return ligne(x.id, pastille(x), couleurAgent(x), complet && x.front && !/^front\s+\S+$/i.test(x.front) ? `${x.front} · ${action}` : action, droite, { onPress: voir(x.id), teinte, charge: x.messages > 3 })
+      return ligne(x.id, etatAgent(x).point, etatAgent(x).couleur, complet && x.front && !/^front\s+\S+$/i.test(x.front) ? `${x.front} · ${action}` : action, droite, { onPress: voir(x.id), teinte, charge: x.messages > 3 })
     }
 
     const carte = (enfants: any, accent?: string) => (
@@ -987,22 +1013,22 @@ export const register: Register = on => {
     const bandeau = bandeauAToi({ points: aToi.length, attend, reflechit: relit || !demandeFinie, auTravail: miens.filter(x => !x.fin).length + fond.length })
 
     // team sorted by state: each line is an agent (a task), or a plan front with no agent seen
-    type Element = { etat: 'cours' | 'lancer' | 'fait'; ordre: number; el: any }
+    type Element = { etat: Etat['groupe']; ordre: number; el: any }
     const elements: Element[] = []
     for (const f of p.fronts) {
       const vivants = visibles.filter(x => frontDe(x) === f.cells[0])
-      for (const x of vivants) elements.push({ etat: x.fin ? 'fait' : 'cours', ordre: x.fin ?? x.debut, el: ligneAgent(x) })
+      for (const x of vivants) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x) })
       if (vivants.length) continue
       const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
-      const c = couleurPlan(etat)
+      const e = etatDuPlan(etat)
       // a running front without an agent is the session itself: the chef's line already says so
-      if (c === 'suggestion' && sansAgent(f.cells[2])) continue
+      if (e === ETATS.enCours && sansAgent(f.cells[2])) continue
       // finished front: the plan line leads to the last agent that held it
       const dernierAgent = miens.filter(x => frontDe(x) === f.cells[0]).sort((x, y) => y.debut - x.debut)[0]
-      elements.push({ etat: c === 'success' ? 'fait' : c === 'inactive' ? 'lancer' : 'cours', ordre: 0,
-        el: ligne(f.cells[0], etatPlan(etat), c, f.cells[0], etat, { onPress: voir(dernierAgent ? dernierAgent.id : 'front:' + f.cells[0]) }) })
+      elements.push({ etat: e.groupe, ordre: 0,
+        el: ligne(f.cells[0], e.point, e.couleur, f.cells[0], etat, { onPress: voir(dernierAgent ? dernierAgent.id : 'front:' + f.cells[0]) }) })
     }
-    for (const x of horsPlan) elements.push({ etat: x.fin ? 'fait' : 'cours', ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
+    for (const x of horsPlan) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
     const ligneFond = (f: typeof fond[number], n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', nomTache(f.quoi) + (n > 1 ? ` ×${n}` : ''), `${Math.max(1, min(t - f.debut))} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
     // card for a lead task: what it is for, since when, its command
     // the id may change at end of turn (the engine's id replaces the launch one): fall back on the name
@@ -1116,7 +1142,7 @@ export const register: Register = on => {
 
         {p.sessions.length > 1 && <Box flexDirection="column" gap="xs">
           {titre('Sessions prévues')}
-          {p.sessions.map(s => ligne(s.cells[0], etatPlan(s.cells[3]), couleurPlan(s.cells[3]), s.cells[0], s.cells[3] ?? ''))}
+          {p.sessions.map(s => ligne(s.cells[0], etatDuPlan(s.cells[3]).point, etatDuPlan(s.cells[3]).couleur, s.cells[0], s.cells[3] ?? ''))}
         </Box>}
 
         {p.attente.length > 0 && <Box flexDirection="column" gap="xs">
@@ -1129,48 +1155,4 @@ export const register: Register = on => {
     )
   })
 
-}
-
-function statutTexte(a: Agent): string {
-  if (a.statut === 'failed') return 'échec'
-  if (a.statut === 'killed') return 'arrêté'
-  if (a.fin) return 'rendu'
-  if (a.statut === 'waiting') return 'attend'
-  return 'en cours'
-}
-
-function pastille(a: Agent): string {
-  if (a.statut === 'failed' || a.statut === 'killed') return '✗'
-  if (a.fin) return '✓'
-  return '●'
-}
-
-
-function couleurAgent(a: Agent): string {
-  if (a.statut === 'failed' || a.statut === 'killed') return 'error'
-  if (a.fin) return 'success'
-  if (a.statut === 'waiting') return 'warning'
-  return 'suggestion'
-}
-
-function etatPlan(etat = ''): string {
-  const e = etat.toLowerCase()
-  if (e.startsWith('contrôl') || e.startsWith('rendu')) return '✓'
-  if (e.startsWith('en cours')) return '●'
-  return '○'
-}
-
-function couleurPlan(etat = ''): string {
-  const e = etat.toLowerCase()
-  if (e.startsWith('contrôl') || e.startsWith('rendu')) return 'success'
-  if (e.startsWith('en cours')) return 'suggestion'
-  if (e.startsWith('échec')) return 'error'
-  return 'inactive'
-}
-
-function statutVoisin(statut: string): string {
-  if (statut === 'failed') return 'échec'
-  if (statut === 'waiting') return 'attend'
-  if (['completed', 'killed'].includes(statut)) return 'rendu'
-  return 'en cours'
 }
