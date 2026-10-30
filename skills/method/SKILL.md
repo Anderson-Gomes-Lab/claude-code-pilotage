@@ -49,7 +49,8 @@ Feedback joins a running batch only if it touches the same files and fits in one
 
 What follows from it:
 
-- Everything expected from them goes in during the same turn: question, approval, test, screenshot, command to type. A question asked only in your text does not exist for them.
+- Everything they can do now goes in during the same turn: question, approval, test, screenshot, command to type. A question asked only in your text does not exist for them.
+- Sort each point by what happens today, not later: the work is stopped without them, `!` in `## À toi`; they can do it and nothing waits, `## À toi` without `!`; they cannot do it yet (a meeting ahead, work in progress), `Toi : …` in `## En attente`, moved up once doable.
 - What is no longer true comes out at once. A point they answered comes out first, before any other work. A check of something you are changing waits in `## En attente` as `Toi : …` and comes back when it can be done.
 - Two points done by the same gesture are one point.
 - Nothing to do: empty section. No note, no rule, no "nothing for now" line.
@@ -102,4 +103,4 @@ Cap : <deliverable>, <stage> : <current action>
 - Toi : something for the person, later
 ```
 
-`État` is one of: `à lancer`, `en cours`, `rendu`, `contrôlé`. A leading `!` in `## À toi` marks what stops the work until they act: it comes first, in orange, and only then does the pane say you are waiting. A task of theirs that stops nothing today takes no `!`, even if it will block later. Full examples: `examples/` in the mod's repository.
+`État` is one of: `à lancer`, `en cours`, `rendu`, `contrôlé`. A leading `!` in `## À toi` marks what stops the work until they act: it comes first, in orange, and only then does the pane say you are waiting. Full examples: `examples/` in the mod's repository.
