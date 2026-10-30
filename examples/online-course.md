@@ -1,5 +1,4 @@
 # Pilotage : Course "Bookkeeping basics"
-Updated: 2026-11-14
 Cap : Course v1, batch 2 of 4 : modules 3 and 4
 
 ## Sessions

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -261,4 +261,18 @@ test('another session is named by what it was asked, and its state is readable',
   expect(etatVoisine({ maj: 1000, auTravail: false, agents: agent }, 2000)).toBe('au travail')
   expect(etatVoisine({ maj: 1000, agents: [] }, 2000)).toBe('au travail')
   expect(etatVoisine({ maj: 0, auTravail: true, agents: [] }, 100000000)).toBe('en pause')
+})
+
+test('the model is told how to use the pane, with or without a project', () => {
+  expect(rappel('/x')).toContain('/x/PILOTAGE.md')
+  expect(rappel('/x')).toContain('pilotage:method')
+  expect(rappel()).toContain('pilotage:method')
+  expect(rappel()).toContain('do nothing')
+})
+
+test('a workstream run by the session has no agent', () => {
+  expect(sansAgent('—')).toBe(true)
+  expect(sansAgent('')).toBe(true)
+  expect(sansAgent()).toBe(true)
+  expect(sansAgent('Home · construction : pages')).toBe(false)
 })

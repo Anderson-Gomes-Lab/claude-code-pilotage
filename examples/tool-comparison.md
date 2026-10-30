@@ -1,5 +1,4 @@
 # Pilotage : Choosing a booking tool
-Updated: 2026-11-14
 Cap : Decision memo, batch 1 of 1 : compare four tools
 
 ## Sessions

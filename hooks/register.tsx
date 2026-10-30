@@ -337,6 +337,15 @@ export function etatVoisine(s: Pick<Voisine, 'maj' | 'auTravail' | 'agents'>, t:
   return t - s.maj > PAUSE_MS ? 'en pause' : s.auTravail === false && !s.agents.length ? 'attend' : 'au travail'
 }
 
+export const sansAgent = (cellule = '') => /^[\s—–-]*$/.test(cellule)
+
+// what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
+export function rappel(dossier?: string): string {
+  return dossier
+    ? `The person watches a Pilotage pane that displays ${dossier}/PILOTAGE.md live. Follow the skill pilotage:method. Say in one line how you route each message. « À toi » says what they can do now, nothing else: update it during this turn, first of all if their message answers it. Add a line to « Fait » when a batch ends.`
+    : 'The Pilotage mod is installed. When the person starts or resumes a project with a deliverable and several steps, use the skill pilotage:method before producing anything: it writes the PILOTAGE.md the pane displays. For a question or a small one-off task, do nothing and do not mention it.'
+}
+
 const mediane = (v: number[]) => v[Math.floor((v.length - 1) / 2)]
 const centile80 = (v: number[]) => v[Math.floor(0.8 * (v.length - 1))]
 
@@ -372,6 +381,7 @@ export const register: Register = on => {
   let retour = ''
   let etapesDetail = false // agent card: full steps rather than title + one line
   let plan: Plan | null = null
+  let rappele = false
   let voisines: Voisine[] = []
   const fils = new Map<string, Pas[]>() // action feed per agent, from its first action
   let filSession: Pas[] = []
@@ -439,6 +449,7 @@ export const register: Register = on => {
       const id = (await $.session.id()).slice(0, 8)
       if (id !== moi) {
         moi = id
+        rappele = false
         fichierLien = lien()
         fichierFinis = finisDe()
         fichierMissions = fichierFinis.replace('/finis/', '/missions/')
@@ -616,6 +627,11 @@ export const register: Register = on => {
   // a message typed by the person (not a command like /btw, not a hidden message) answers the current question
   on('prompt.submit', async ($, e, next) => {
     if (!e.isMeta && !e.command) { questionLive = ''; relit = true; atoiAvant = null; relitDepuis = await $.clock.now(); $.ui.invalidate('ui.render') }
+    // the method travels with the mod: every message on a project, the first one otherwise
+    if (!e.isMeta && !e.command && (plan || !rappele)) {
+      rappele = true
+      return next({ ...e, context: [...(e.context ?? []), rappel(plan?.dossier)] })
+    }
     return next(e)
   })
 
@@ -943,6 +959,8 @@ export const register: Register = on => {
       if (vivants.length) continue
       const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
       const c = couleurPlan(etat)
+      // a running front without an agent is the session itself: the chef's line already says so
+      if (c === 'suggestion' && sansAgent(f.cells[2])) continue
       // finished front: the plan line leads to the last agent that held it
       const dernierAgent = miens.filter(x => frontDe(x) === f.cells[0]).sort((x, y) => y.debut - x.debut)[0]
       elements.push({ etat: c === 'success' ? 'fait' : c === 'inactive' ? 'lancer' : 'cours', ordre: 0,
@@ -977,6 +995,9 @@ export const register: Register = on => {
     const enCours = elements.filter(e => e.etat === 'cours').sort((a, b) => a.ordre - b.ordre)
     const aLancer = elements.filter(e => e.etat === 'lancer')
     const faits = elements.filter(e => e.etat === 'fait').sort((a, b) => b.ordre - a.ordre)
+    // without agents, what is done comes from the plan's « Fait » lines
+    const lotsFaits = p.fait.map((l, k) => ({ etat: 'fait' as const, ordre: 0, el: ligne('lot' + k, '✓', 'success', l, '') }))
+    const faitsVus = faits.length ? faits : lotsFaits
     const groupe = (nom: string, liste: Element[], max = 99) => liste.length > 0 && (
       <Box flexDirection="column" paddingLeft="lg" paddingTop="xs">
         {titre(`${nom} · ${liste.length}`)}
@@ -990,8 +1011,10 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap="sm" padding="sm">
           <Button plain onPress={voir('')}>← Retour</Button>
-          {titre(`Fait · ${faits.length}`)}
-          {faits.map(e => e.el)}
+          {titre(`Fait · ${faitsVus.length}`)}
+          {faitsVus.map(e => e.el)}
+          {faits.length > 0 && p.fait.length > 0 && titre(`Lots · ${p.fait.length}`)}
+          {faits.length > 0 && p.fait.map(l => <Text key={l} size="footnote">{l}</Text>)}
         </Box>
       )
     }
@@ -1001,7 +1024,7 @@ export const register: Register = on => {
     const ligne2 = [action, passe > 0 ? `${duree(passe)} passées` : ''].filter(Boolean).join(' · ')
     const groupes = sujets(p.attente)
     // the next batch takes the remaining screen space, so the overview fits without scrolling
-    const avant = [enCours.length, tachesChef.length, aLancer.length, Math.min(faits.length, 3) + (faits.length > 3 ? 1 : 0)]
+    const avant = [enCours.length, tachesChef.length, aLancer.length, Math.min(faitsVus.length, 3) + (faitsVus.length > 3 ? 1 : 0)]
     const nSujets = sujetsVisibles({
       rangees: e.viewport?.rows,
       groupes: avant.filter(n => n > 0),
@@ -1047,7 +1070,7 @@ export const register: Register = on => {
           {groupe('Agents en cours', enCours)}
           {groupe('Tâches du chef', tachesChef)}
           {groupe('À lancer', aLancer)}
-          {groupe('Fait', faits, 3)}
+          {groupe('Fait', faitsVus, 3)}
           {elements.length === 0 && <Box paddingLeft="lg"><Text dimColor>Aucun agent : la session travaille seule</Text></Box>}
           {voisines.map(s => (
             <Box key={s.id} flexDirection="column">

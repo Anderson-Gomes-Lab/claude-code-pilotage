@@ -1,5 +1,4 @@
 # Pilotage : Website for Northwind Carpentry
-Updated: 2026-11-14
 Cap : Website v1, batch 2 of 3 : project pages
 
 ## Sessions

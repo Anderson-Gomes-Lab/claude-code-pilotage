@@ -1,6 +1,6 @@
 {
   "name": "pilotage",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Project dashboard pane for Claude Code: heading, team (sessions, workstreams, agents), usual durations, what is waiting for you",
   "author": {
     "name": "Anderson Gomes"

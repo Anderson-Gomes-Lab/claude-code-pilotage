@@ -63,7 +63,7 @@ The pane combines two sources.
 - **The flight plan** (`PILOTAGE.md`) states the intent: the heading, the workstreams, what is done, what is expected from you, what comes next. Claude writes and maintains it; you only read it in the pane.
 - **The live feed** states reality: a new agent shows up at once with its mission; a question Claude asks at the end of a turn goes straight into "À toi"; as soon as you send a message, "À toi" turns grey while Claude reads it.
 
-The pane only displays. It is accurate if Claude keeps `PILOTAGE.md` up to date (see the method below) and names and briefs its agents following a simple convention.
+The pane only displays. It is accurate because Claude keeps `PILOTAGE.md` up to date and names and briefs its agents following a simple convention (see the method below).
 
 ### How it finds the project
 
@@ -75,7 +75,6 @@ Section names are **fixed French keywords**: the mod reads them. The content can
 
 ```markdown
 # Pilotage : Website for Northwind Carpentry
-Updated: 2026-11-14
 Cap : Website v1, batch 2 of 3 : project pages
 
 ## Sessions
@@ -117,17 +116,7 @@ More examples in [`examples/`](examples/): small-business website, email automat
 
 ## The method, on Claude's side
 
-The pane is only accurate if Claude follows a few rules. Paste this into your project's `CLAUDE.md`, or into `~/.claude/CLAUDE.md` for all projects:
-
-```markdown
-## Pilotage
-- When a project starts: stop, then write `PILOTAGE.md` at the root (template: the Pilotage mod README). Show it in five lines and wait for approval. Only this session writes it.
-- Route each message in one line: same workstream, other workstream (new agent), other project (another session), question (answer here).
-- One agent per workstream, only if the workstreams touch different files. An agent that delivered its batch does not get the next one.
-- Name each agent `Front · type : action` (types: recherche, construction, correction, contrôle — research, build, fix, review). Its brief starts with `Mission : <one simple sentence>`, then numbered steps, one short action each. Its report ends with `En une phrase : …` and `Pourquoi : …`.
-- "À toi" says what I can do now, nothing else. Whatever you expect from me goes in, in the same turn; whatever is no longer true comes out at once (answered, or being changed: it waits in "En attente" as `Toi : …` and comes back when ready); nothing to do means an empty section.
-- After each batch: a neutral review, a line in "Fait". When the project is delivered: a `Livré : <date>` line.
-```
+The pane is only accurate if Claude keeps `PILOTAGE.md` true. **You have nothing to set up**: the method installs with the mod, as the skill [`pilotage:method`](skills/method/SKILL.md). The mod tells Claude about it, so a new project starts with the flight plan. If Claude does not start it by itself, ask: "use the Pilotage method".
 
 What happens at each step:
 

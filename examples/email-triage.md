@@ -1,5 +1,4 @@
 # Pilotage : Support inbox triage
-Updated: 2026-11-14
 Cap : Automation v1, batch 1 of 2 : sorting and draft replies
 
 ## Sessions
