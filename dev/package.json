@@ -1,0 +1,11 @@
+{
+  "name": "claude-code-pilotage-dev",
+  "private": true,
+  "description": "Development checks only, kept out of the plugin root: a lockfile there makes the engine install all this for every user",
+  "devDependencies": {
+    "eslint": "^10.14.0",
+    "jscpd": "^5.4.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}
