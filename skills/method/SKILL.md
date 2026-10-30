@@ -59,8 +59,9 @@ What follows from it:
 
 1. A neutral review by a subagent with fresh context: it gets the diff and the requirement, not your reasoning. If something visible changed, look at the result yourself.
 2. `PILOTAGE.md` up to date: one plain line in `## Fait` with the date. `## En attente` only keeps the future.
-3. Three lines to the person: done, in progress, next.
-4. A workstream has grown: split it.
+3. **Restart: `## En attente` is a queue, not a parking lot.** A new request from the person comes first. Then sort each line. Doable on files separate from running work: to start. Blocked: end the line with `(attend …)`. Theirs, or their decision (what goes out to the client, money, scope, the irreversible, an unrequested change to a screen they saw): sort as in section 3. A plain note: move it to `## Décisions`. A review remark with no effect for the client: delete it. Group by files: three agents at most, several tasks each. A single group and no agent running: do it yourself. It all counts as one check (one review, full checks once), with one commit per topic. One agent has a problem: commit what is green and checked, give the rest to a fresh agent.
+4. Three lines to the person: done, in progress, next.
+5. A workstream has grown: split it.
 
 ## 5. End of project
 
