@@ -28,7 +28,7 @@ When: a new project, a project without `PILOTAGE.md`, or a second workstream app
 
 Talk to the person in their words: no "workstream" or "batch" if they are not technical. The pane is in French: the first time, say that "À toi" means "your turn".
 
-**A small project is the normal case.** Work done in sequence stays in the session: put `—` in the `Agent` column. `État` decides where a row shows: `à lancer` under "À lancer"; `en cours` with `—` is left out, since the session's own line says what it is doing; `rendu` or `contrôlé` under "Fait". Only write an agent's name when you will really start one. `## Sessions` is only needed with several sessions. `## Fait` starts empty.
+**A small project is the normal case.** Work done in sequence stays in the session: put `—` in the `Agent` column. `État` decides where a row shows: `à lancer` under "À lancer"; `en cours` shows only while an agent really runs; `rendu` or `contrôlé` under "Fait". Only write an agent's name when you will really start one. `## Sessions` is only needed with several sessions. `## Fait` starts empty.
 
 ## 2. Each message: route it
 

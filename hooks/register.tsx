@@ -23,8 +23,8 @@ const ETATS: Record<string, Etat> = {
   rendu: { texte: 'rendu', point: '✓', couleur: 'success', groupe: 'fait' },
   echec: { texte: 'échec', point: '✗', couleur: 'error', groupe: 'fait' },
   arrete: { texte: 'arrêté', point: '✗', couleur: 'error', groupe: 'fait' },
-  // a plan line in failure still needs someone, unlike an agent that ended
-  echecPlan: { texte: 'échec', point: '○', couleur: 'error', groupe: 'cours' },
+  // a plan line in failure has to be started again, unlike an agent that ended
+  echecPlan: { texte: 'échec', point: '○', couleur: 'error', groupe: 'lancer' },
   aLancer: { texte: 'à lancer', point: '○', couleur: 'inactive', groupe: 'lancer' },
 }
 const PAUSE_MS = 120_000
@@ -248,15 +248,27 @@ export function phrases(texte = ''): string[] {
   return texte.split('\n').flatMap(l => l.split(/(?<=[.!?…])(?<!(?:^|[^\p{L}])[A-ZÀ-Ý]\.)\s+(?=[«A-ZÀ-Ý•])/u)).map(x => x.trim()).filter(Boolean)
 }
 
-// What a lead task does, in plain words
-export function nomTache(quoi = ''): string {
-  if (/live updates? for artifact/i.test(quoi)) return 'Suivi d’une page publiée'
-  return quoi
+// A watch set automatically when a page is published: it is no one's work
+export const estVeille = (quoi = '') => /live updates? for artifact/i.test(quoi)
+
+type Fond = { id: string; quoi: string; debut: number; commande?: string }
+
+// End of turn: the engine's background work, except agents (tracked apart), what ended, and watches
+export function tachesDeFond(taches: any[], connues: Fond[], t: number): Fond[] {
+  return taches
+    .filter(b => b.type !== 'subagent' && !FINIS.includes(String(b.status)))
+    .map(b => {
+      const quoi = String(b.description || b.command || b.type).split('\n')[0]
+      // the start seen at launch is kept (same id, or same description)
+      const vu = connues.find(f => f.id === String(b.id)) ?? connues.find(f => f.quoi === quoi)
+      return { id: String(b.id), quoi, debut: vu?.debut ?? t, commande: String(b.command || vu?.commande || '') }
+    })
+    .filter(b => !estVeille(b.quoi))
 }
 
+// What a lead task does, in plain words
 export function aQuoiSert(quoi = '', commande = ''): string {
   const tout = `${quoi} ${commande}`
-  if (/live updates? for artifact|artifact/i.test(tout)) return 'Garde à jour une page publiée (artifact) pendant que Claude la modifie. Elle tourne tant que la session est ouverte.'
   if (/http\.server|\bserve\b|servir|npm run (dev|start)|vite|localhost|--port/i.test(tout)) return 'Sert le site sur ta machine, pour le regarder dans le navigateur. Elle tourne jusqu’à ce que Claude l’arrête.'
   if (/test|verifier|vérifier|pytest|playwright/i.test(tout)) return 'Lance des tests en arrière-plan. Claude lit le résultat quand ils finissent.'
   return 'Commande lancée en arrière-plan. Claude reçoit son résultat quand elle finit.'
@@ -366,7 +378,7 @@ export function lireAToi(atoi: string[], question: string, demandeFinie: boolean
   }
   const bloquants = new Set(points.filter(x => x.bloque).map(x => x.t))
   // nothing is running anymore: what comes next is up to you
-  // (background tasks do not decide this: servers and watches run forever)
+  // (background tasks do not decide this: servers run forever)
   const arret = demandeFinie && agentsFinis
   return {
     points: [...points.filter(x => x.bloque), ...points.filter(x => !x.bloque)].map(x => x.t),
@@ -421,7 +433,11 @@ export function etatDuPlan(etat = ''): Etat {
   return e.startsWith('échec') ? ETATS.echecPlan : ETATS.aLancer
 }
 
-export const sansAgent = (cellule = '') => /^[\s—–-]*$/.test(cellule)
+// « Agents en cours » only shows agents seen live: a running plan row with none shows nothing
+export function frontSansAgent(etat = ''): Etat | null {
+  const vu = etatDuPlan(etat)
+  return vu === ETATS.enCours ? null : vu
+}
 
 // what the model is told in every session: the mod is useless if nobody feeds PILOTAGE.md
 export function rappel(dossier?: string): string {
@@ -476,8 +492,8 @@ export const register: Register = on => {
   let relitDepuis = 0, debutTour = 0 // a message typed during a turn waits for the next one: only the end of that turn counts it as read
   let questionLive = '' // last question asked by the session, until the answer
   let demandeFinie = true // the last request typed in this session
-  // background work that is not an agent (command, watch, workflow): the engine's list at each end of turn
-  let fond: { id: string; quoi: string; debut: number; commande?: string }[] = []
+  // background work that is not an agent (command, server, workflow): the engine's list at each end of turn
+  let fond: Fond[] = []
   let restaure = false
   let finisAEcrire = false // report arrived: the saved copy must follow
   let passe = 0 // minutes logged in the project's temps.csv
@@ -665,7 +681,7 @@ export const register: Register = on => {
     if (!x.agentId && x.tool === 'Bash' && (x.run_in_background ?? x.input?.run_in_background)) {
       const quoi = String(x.description ?? x.input?.description ?? 'Commande')
       const quand = await $.clock.now()
-      fond = [...fond, { id: 'b' + (x.tool_use_id ?? x.toolUseId ?? quand), quoi, debut: quand, commande: String(x.command ?? x.input?.command ?? '') }]
+      if (!estVeille(quoi)) fond = [...fond, { id: 'b' + (x.tool_use_id ?? x.toolUseId ?? quand), quoi, debut: quand, commande: String(x.command ?? x.input?.command ?? '') }]
       $.ui.invalidate('ui.render')
     }
     // a question asked by the session (end-of-turn box, multiple-choice question) goes straight to « À toi »
@@ -735,14 +751,7 @@ export const register: Register = on => {
   on('classic.Stop', async ($, e, next) => {
     const x = e as any
     const t = await $.clock.now()
-    fond = ((x.background_tasks ?? []) as any[])
-      .filter(b => b.type !== 'subagent' && !FINIS.includes(String(b.status)))
-      .map(b => {
-        const quoi = String(b.description || b.command || b.type).split('\n')[0]
-        // the start seen at launch is kept (same id, or same description)
-        const vu = fond.find(f => f.id === String(b.id)) ?? fond.find(f => f.quoi === quoi)
-        return { id: String(b.id), quoi, debut: vu?.debut ?? t, commande: String(b.command || vu?.commande || '') }
-      })
+    fond = tachesDeFond(x.background_tasks ?? [], fond, t)
     finDeTour()
     $.ui.invalidate('ui.render')
     return next(e)
@@ -1016,14 +1025,13 @@ export const register: Register = on => {
       for (const x of vivants) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x) })
       if (vivants.length) continue
       const etat = (f.cells[3] ?? '').split(',').pop()!.trim()
-      const vu = etatDuPlan(etat)
-      // a running front without an agent is the session itself: the chef's line already says so
-      if (vu === ETATS.enCours && sansAgent(f.cells[2])) continue
+      const vu = frontSansAgent(etat)
+      if (!vu) continue
       elements.push({ etat: vu.groupe, ordre: 0,
         el: ligne(f.cells[0], vu.point, vu.couleur, f.cells[0], etat, { onPress: voir('front:' + f.cells[0]) }) })
     }
     for (const x of horsPlan) elements.push({ etat: etatAgent(x).groupe, ordre: x.fin ?? x.debut, el: ligneAgent(x, true) })
-    const ligneFond = (f: typeof fond[number], n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', nomTache(f.quoi) + (n > 1 ? ` ×${n}` : ''), `${depuis(f.debut)} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
+    const ligneFond = (f: Fond, n = 1) => ligne('fond' + f.id, '⚙', 'suggestion', f.quoi + (n > 1 ? ` ×${n}` : ''), `${depuis(f.debut)} min`, { onPress: voir('tache:' + f.id + '\u0000' + f.quoi) })
     // card for a lead task: what it is for, since when, its command
     // the id may change at end of turn (the engine's id replaces the launch one): fall back on the name
     const [tacheId, tacheQuoi] = choisi.startsWith('tache:') ? choisi.slice(6).split('\u0000') : []
@@ -1033,7 +1041,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap="lg" padding="sm">
           {retourAccueil}
           <Box flexDirection="column" gap="xs">
-            {avecQuestion(<Text weight="semibold">{nomTache(tache.quoi)}</Text>, `la tâche ${nomTache(tache.quoi)}`)}
+            {avecQuestion(<Text weight="semibold">{tache.quoi}</Text>, `la tâche ${tache.quoi}`)}
             <Text dimColor size="footnote">Tâche du chef · depuis {duree(depuis(tache.debut))}</Text>
           </Box>
           {bloc('À quoi elle sert', <Text>{aQuoiSert(tache.quoi, tache.commande)}</Text>)}
@@ -1042,9 +1050,9 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // the lead's tasks (commands, servers, watches): their own group, so they are not confused with agents
-    const parNom = new Map<string, typeof fond>()
-    for (const f of [...fond].sort((a, b) => a.debut - b.debut)) parNom.set(nomTache(f.quoi), [...(parNom.get(nomTache(f.quoi)) ?? []), f])
+    // the lead's tasks (commands, servers): their own group, so they are not confused with agents
+    const parNom = new Map<string, Fond[]>()
+    for (const f of [...fond].sort((a, b) => a.debut - b.debut)) parNom.set(f.quoi, [...(parNom.get(f.quoi) ?? []), f])
     const tachesChef = [...parNom.values()].map(l => ({ etat: 'cours' as const, ordre: l[0].debut, el: ligneFond(l[0], l.length) }))
 
     const actifs = elements.filter(e => e.etat === 'cours').sort((a, b) => a.ordre - b.ordre)

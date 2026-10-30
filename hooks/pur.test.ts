@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, nomTache, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, sansAgent, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan, lireApresTour } from './register'
+import { action, appartient, nomCourt, duree, uneLigne, estimer, extraire, unePhrase, lireNom, lirePlan, sujets, resume, tempsPasse, couper, codeFront, etapes, morceaux, sujetsVisibles, mission, phrases, aQuoiSert, estVeille, etapeCourte, detailEtape, aDuDetail, sousTitre, nomSession, etatVoisine, rappel, attendToi, phraseAToi, lireAToi, relecture, bandeauAToi, groupesAToi, etatChef, etatAgent, etatDuPlan, lireApresTour, frontSansAgent, tachesDeFond } from './register'
 
 const PLAN = `# Pilotage : Site Test
 Cap : Maquette v6, lot 2 sur 3
@@ -182,14 +182,27 @@ test('agent card: mission without label, steps in short lines', () => {
 })
 
 test('lead task explained in plain words', () => {
-  expect(aQuoiSert('live updates for artifact abc')).toMatch(/page publiée/)
   expect(aQuoiSert('Servir le site construit en local', 'python3 -m http.server 8000')).toMatch(/navigateur/)
   expect(aQuoiSert('Autre', 'sleep 5')).toMatch(/arrière-plan/)
 })
 
-test('lead task named in French', () => {
-  expect(nomTache('live updates for artifact 1234')).toBe('Suivi d’une page publiée')
-  expect(nomTache('Servir le site construit en local')).toBe('Servir le site construit en local')
+test('background tasks at end of turn: no agent, nothing finished, no watch; the start seen at launch is kept', () => {
+  const taches = [
+    { id: 'k1', type: 'bash', description: 'Lancer les tests\nsuite', status: 'running', command: 'npm test' },
+    { id: 'k2', type: 'x', description: 'live updates for artifact 12', status: 'running' },
+    { id: 'k3', type: 'bash', description: 'Fini', status: 'completed' },
+    { id: 'k4', type: 'subagent', description: 'Agent', status: 'running' },
+  ]
+  expect(tachesDeFond(taches, [{ id: 'b1', quoi: 'Lancer les tests', debut: 5 }], 9))
+    .toEqual([{ id: 'k1', quoi: 'Lancer les tests', debut: 5, commande: 'npm test' }])
+  expect(tachesDeFond([{ id: 'k5', type: 'bash', command: 'sleep 5', status: 'running' }], [], 9))
+    .toEqual([{ id: 'k5', quoi: 'sleep 5', debut: 9, commande: 'sleep 5' }])
+})
+
+test('a watch set when a page is published is not a task', () => {
+  expect(estVeille('live updates for artifact 1234')).toBe(true)
+  expect(estVeille('Live update for artifact 1234')).toBe(true)
+  expect(estVeille('Servir le site construit en local')).toBe(false)
 })
 
 test('summarized step: a title and one line', () => {
@@ -270,11 +283,11 @@ test('the model is told how to use the pane, with or without a project', () => {
   expect(rappel()).toContain('do nothing')
 })
 
-test('a workstream run by the session has no agent', () => {
-  expect(sansAgent('—')).toBe(true)
-  expect(sansAgent('')).toBe(true)
-  expect(sansAgent()).toBe(true)
-  expect(sansAgent('Home · construction : pages')).toBe(false)
+test('without a live agent, a plan row is never shown as running, whatever its Agent column says', () => {
+  expect(frontSansAgent('en cours')).toBe(null)
+  expect(frontSansAgent('à lancer')?.groupe).toBe('lancer')
+  expect(frontSansAgent('rendu')?.groupe).toBe('fait')
+  expect(frontSansAgent('échec')?.groupe).toBe('lancer')
 })
 
 test('Claude waits only on a blocking point', () => {
@@ -360,7 +373,7 @@ test('one table of states: plan words', () => {
   expect(vu('Rendu')).toEqual(['✓', 'success', 'fait'])
   expect(vu('contrôlé')).toEqual(['✓', 'success', 'fait'])
   expect(vu('en cours')).toEqual(['●', 'suggestion', 'cours'])
-  expect(vu('échec')).toEqual(['○', 'error', 'cours'])
+  expect(vu('échec')).toEqual(['○', 'error', 'lancer'])
   expect(vu('à lancer')).toEqual(['○', 'inactive', 'lancer'])
   expect(vu()).toEqual(['○', 'inactive', 'lancer'])
 })
