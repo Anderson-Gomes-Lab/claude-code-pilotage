@@ -41,7 +41,8 @@ const tableau = (bloc: string): Ligne[] =>
 
 const liste = (bloc: string) =>
   bloc.split('\n').filter(l => l.trim().startsWith('- ')).map(l => l.trim().slice(2))
-    .filter(l => !/^rien\b/i.test(l))
+    // « rien … » and a line wholly in parentheses are notes, not items
+    .filter(l => !/^[(_*]*rien\b/i.test(l) && !/^\([^()]*\)$/.test(l))
 
 // Splits a plan sentence into two readable lines: before and after the first separator.
 export function couper(texte: string, sep: string): [string, string] {

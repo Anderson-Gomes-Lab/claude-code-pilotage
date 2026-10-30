@@ -229,3 +229,8 @@ test('no detail to expand when the summary already says it all', () => {
   expect(aDuDetail('Libellé : la zone sera vue demain. Remplace « 35 km » partout.')).toBe(true)
   expect(aDuDetail('Libellé, partout : la zone sera vue demain.')).toBe(true)
 })
+
+test('a note in parentheses or a « nothing » line is not an item', () => {
+  const p = lirePlan('# Pilotage : X\n\n## À toi\n- (nothing waiting; rule of 30/10: no feedback = approved)\n- Rien pour le moment\n- Valider le prix (avant lundi)\n- (urgent) Rappeler (lundi)\n', '/x')
+  expect(p.atoi).toEqual(['Valider le prix (avant lundi)', '(urgent) Rappeler (lundi)'])
+})
