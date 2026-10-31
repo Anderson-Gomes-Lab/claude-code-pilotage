@@ -28,12 +28,12 @@ Pilotage is a pane for Claude Code: it shows where a project stands, from what t
 - The mod itself has no dependency.
 - The repository is public: no client, prospect or city name, in tests either.
 
-## Measures (30/10/2026)
+## Measures (31/10/2026)
 
 | Measure | Today | Threshold |
 | --- | --- | --- |
-| Biggest file | register.tsx, 1,234 lines | 1,234 (others 461) |
+| Biggest file | register.tsx, 1,232 lines | 1,232 (others 461) |
 | Function complexity | 109, the pane's render | 109 in register.tsx, for all its functions (others 6) |
 | Duplication | 0 % | 0 % |
 | Unused exports | 0 | 0 |
-| Tests | 81 | |
+| Tests | 90 | |

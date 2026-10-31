@@ -74,6 +74,7 @@ async function demarrer($: any, on: any, scene: Scene, ouverts: string[] = []) {
   on('clock.every', () => ({ value: undefined }))
   on('agent.list', () => ({ value: scene.agents ?? [] }))
   on('tool.call', () => ({ result: {} }))
+  on('turn.complete', () => ({ text: '' }))
   on('fs.read', (_: any, e: any) => {
     const f = fichiers.get(String(e.path))
     if (f === undefined) throw new Error('absent')
@@ -179,6 +180,19 @@ vue('a failed agent offers to copy its error', { agents: AGENTS }, async (ui, te
   expect((await textes())).toContain('CE QU’IL A RENDU')
   await ui.press({ key: 'copier' })
   expect(copies).toEqual([AGENTS[1].description])
+})
+
+const FINI = [{ id: 'a4', description: 'Hors plan · recherche : fini', type: 'general-purpose', status: 'completed' }]
+
+vue('a finished agent shows what it handed back', { agents: FINI }, async (ui, textes, $) => {
+  await $.turn.complete({ agentId: 'a4', reason: 'answer', answer: 'Sept fiches.\nEn une phrase : les fiches sont écrites.', durationMs: 1, isAborted: false, turnId: 't' })
+  await ui.press({ key: 'a4-b' })
+  expect(await textes()).toContain('les fiches sont écrites.')
+})
+
+vue('a finished agent without a report: the pane says it received none', { agents: FINI }, async (ui, textes) => {
+  await ui.press({ key: 'a4-b' })
+  expect(await textes()).toContain('Compte rendu non reçu.')
 })
 
 vue('front card: what the plan says, nothing about an agent it never saw', {}, async (ui, textes) => {

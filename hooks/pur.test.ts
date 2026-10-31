@@ -49,7 +49,6 @@ test('estimate: nothing under five measurements, a range afterwards, an alert be
   expect(estimer('recherche', 7, histo)!.long).toBe(true)
 })
 
-
 test('the contrôle type, with its accent, is recognized', () => {
   expect(lireNom('Contrôle · contrôle : relire le mod')).toEqual({ front: 'Contrôle', type: 'contrôle' })
 })
@@ -99,6 +98,7 @@ test('each action is said in plain words', () => {
   expect(action('mcp__srv__get_thing', {})).toBe('a utilisé get_thing')
   expect(action('mcp__claude_ai_Gmail__search_threads', {})).toBe('a utilisé search_threads')
   expect(action('Bash', { command: 'curl -H "Authorization: Bearer x"' })).toBe('a lancé une commande')
+  expect(action('SubagentHandback', { message: 'Fait.' })).toBe('a envoyé son compte rendu')
 })
 
 test('the report gives its summary and its reason', () => {

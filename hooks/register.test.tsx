@@ -119,10 +119,67 @@ test('an agent gone from the list after its report counts as finished', async ()
   const agents = [{ id: 'a', description: 'x', status: 'running' }]
   const m = moteur(agents)
   await m.lancer('session.start', {})
-  await m.lancer('classic.SubagentStop', { agent_id: 'a', last_assistant_message: 'fait' })
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'fait' })
   agents.length = 0
   await m.tic()
   expect(JSON.parse(m.fichier('/h/.claude/pilotage/finis/abcdef12.json')!)[0].statut).toBe('completed')
+})
+
+test('a report handed back reaches the agent, its summary line included', async () => {
+  const agents = [{ id: 'a', description: 'x', status: 'running' }]
+  const m = moteur(agents)
+  await m.lancer('session.start', {})
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'Sept fiches.\nEn une phrase : les fiches sont écrites.\nPourquoi : pour choisir les clips.' })
+  agents[0].status = 'completed'
+  await m.tic()
+  const [a] = JSON.parse(m.fichier('/h/.claude/pilotage/finis/abcdef12.json')!)
+  expect(a.resume).toBe('les fiches sont écrites.')
+  expect(a.pourquoi).toBe('pour choisir les clips.')
+  expect(a.dernier).toContain('Sept fiches.')
+})
+
+const finis = (m: ReturnType<typeof moteur>) => JSON.parse(m.fichier('/h/.claude/pilotage/finis/abcdef12.json')!)
+
+for (const raison of ['aborted', 'error', 'refusal']) {
+  test(`an agent stopped by ${raison} has reported nothing`, async () => {
+    const agents = [{ id: 'a', description: 'x', status: 'running' }]
+    const m = moteur(agents)
+    await m.lancer('session.start', {})
+    await m.lancer('turn.complete', { agentId: 'a', reason: raison, answer: 'à moitié' })
+    agents.length = 0
+    await m.tic()
+    expect(finis(m)[0].statut).toBe('perdu')
+  })
+}
+
+test('a run that does not finish takes back the report of the run before', async () => {
+  const agents = [{ id: 'a', description: 'x', status: 'running' }]
+  const m = moteur(agents)
+  await m.lancer('session.start', {})
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'En une phrase : tour 1 fini.' })
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'aborted', answer: 'à moitié' })
+  agents[0].status = 'killed'
+  await m.tic()
+  expect(finis(m)[0].resume).toBeUndefined()
+})
+
+test('an agent that ends before it is listed keeps its report', async () => {
+  const agents: any[] = []
+  const m = moteur(agents)
+  await m.lancer('session.start', {})
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'En une phrase : fini très vite.' })
+  agents.push({ id: 'a', description: 'x', status: 'completed' })
+  await m.tic()
+  expect(finis(m)[0].resume).toBe('fini très vite.')
+})
+
+test('an agent that ends does not end the session turn', async () => {
+  const m = moteur([{ id: 'a', description: 'x', status: 'running' }])
+  await m.lancer('session.start', {})
+  await m.lancer('turn.start', { text: 'x' })
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'fait' })
+  await m.tic()
+  expect(m.etat().auTravail).toBe(true)
 })
 
 test('an interrupted turn stops « au travail »', async () => {
@@ -154,7 +211,7 @@ test('a report that arrives after the agent left the list still counts', async (
   await m.lancer('session.start', {})
   agents.length = 0
   await m.tic()
-  await m.lancer('classic.SubagentStop', { agent_id: 'a', last_assistant_message: 'fait' })
+  await m.lancer('turn.complete', { agentId: 'a', reason: 'answer', answer: 'fait' })
   agents.push({ id: 'b', description: 'y', status: 'failed' })
   await m.tic()
   expect(JSON.parse(m.fichier('/h/.claude/pilotage/finis/abcdef12.json')!)[0].statut).toBe('completed')

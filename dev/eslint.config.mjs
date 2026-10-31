@@ -9,6 +9,6 @@ export default tseslint.config(
   },
   {
     files: ['hooks/register.tsx'],
-    rules: { complexity: ['error', 109], 'max-lines': ['error', { max: 1234 }] },
+    rules: { complexity: ['error', 109], 'max-lines': ['error', { max: 1232 }] },
   },
 )

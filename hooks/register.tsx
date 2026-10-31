@@ -124,6 +124,7 @@ export function action(outil: string, x: Record<string, unknown>): string {
     case 'WebFetch': { const h = String(x.url ?? '').match(/^https?:\/\/([^/]+)/)?.[1]; return `a lu la page ${h ?? 'web'}` }
     case 'Agent': return `a lancé l'agent ${court(x.description, 50)}`
     case 'SendMessage': return 'a envoyé un message à un agent'
+    case 'SubagentHandback': return 'a envoyé son compte rendu'
     default: return `a utilisé ${outil.replace(/^mcp__.*__/, '')}`
   }
 }
@@ -547,6 +548,7 @@ export const register: Register = on => {
   let arreter: { cancel: () => void } | null = null
   const lances = new Map<string, number>()
   const actions = new Map<string, number>() // actions per agent, counted from the start
+  const rapports = new Map<string, Partial<Agent>>() // reports of agents that ended before being listed
   let parDossier = false // project found from the working folder: it takes priority
   let relancer: (() => Promise<void>) | null = null
   let ouvrirPanneau: (() => void) | null = null
@@ -653,7 +655,7 @@ export const register: Register = on => {
             id: i.id, nom: description, nomCourt: i.name, front, type, statut: i.status ?? 'running',
             debut: lance ?? maintenant, departVu: lance !== undefined,
             fin: FINIS.includes(i.status ?? '') ? maintenant : undefined,
-            outils: actions.get(i.id) ?? 0, messages: 0, mission: missions.get(description), fil: fils.get(i.id),
+            outils: actions.get(i.id) ?? 0, messages: 0, mission: missions.get(description), fil: fils.get(i.id), ...rapports.get(i.id),
           })
           continue
         }
@@ -803,6 +805,15 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) finDeTour(await $.clock.now())
+    else {
+      // the end of a run replaces the agent's report, its last message or what it handed back: nothing if it did not finish
+      const fini = e.reason === 'answer'
+      const rapport = fini ? { ...extraire(e.answer), dernier: e.answer.slice(0, 600) } : { resume: undefined, pourquoi: undefined, dernier: undefined }
+      const a = suivis.get(e.agentId)
+      if (a) { Object.assign(a, rapport); if (fini && a.statut === 'perdu') a.statut = 'completed' }
+      else rapports.set(e.agentId, rapport)
+      finisAEcrire = true
+    }
     return next(e)
   })
 
@@ -819,19 +830,6 @@ export const register: Register = on => {
   // the session is over: its shared state must not keep saying it works
   on('classic.SessionEnd', async ($, e, next) => {
     if (dossier) { try { await $.fs.write(`${dossier}/.pilotage/${moi}.json`, JSON.stringify({ id: moi, maj: 0, agents: [] })) } catch { /* it will go silent */ } }
-    return next(e)
-  })
-
-  on('classic.SubagentStop', async ($, e, next) => {
-    const x = e as any
-    const a = suivis.get(x.agent_id)
-    if (a) {
-      const tout = String(x.last_assistant_message ?? '')
-      Object.assign(a, extraire(tout))
-      a.dernier = tout.slice(0, 600)
-      if (a.statut === 'perdu') a.statut = 'completed'
-      finisAEcrire = true
-    }
     return next(e)
   })
 
@@ -1042,7 +1040,7 @@ export const register: Register = on => {
                 </Box>),
             etapes(a.mission).some(aDuDetail) && <Box key="d" flexDirection="row"><Button key="detail" variant="secondary" onPress={() => { etapesDetail = !etapesDetail; $.ui.invalidate('ui.render') }}>{etapesDetail ? 'Résumer' : 'Tout le détail'}</Button></Box>,
           ])}
-          {a.fin && a.statut !== 'perdu' && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Pas de compte rendu.'}</Text>)}
+          {a.fin && a.statut !== 'perdu' && bloc('Ce qu’il a rendu', <Text color={a.statut === 'failed' ? 'error' : undefined}>{a.resume || unePhrase(a.dernier, 300) || 'Compte rendu non reçu.'}</Text>)}
           {a.pourquoi && bloc('Pourquoi', <Text>{a.pourquoi}</Text>)}
           {bloc(a.fin ? 'Ses dernières actions' : 'Où il en est', fil((a.fil ?? []).slice(-3)))}
           {a.statut === 'failed' && <Button key="copier" onPress={copier(a.dernier ?? a.nom)}>Copier l’erreur</Button>}
